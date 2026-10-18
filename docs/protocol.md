@@ -91,3 +91,43 @@ Each event `data:` is JSON; event names: `device`, `surface`, `preferences`, `ai
 - Exact JSON schema of `/api/device` and SSE events (needs a live capture or firmware strings).
 - Meaning of `<key>` values for position preferences (find `Position` enum near line ~35800).
 - Whether the bed API is reachable unauthenticated from any LAN host (client sends no credentials).
+
+## Verified against a live bed (2026-10-18)
+Bed `ReST-ee0d07`, model `mac` (P3A), config `publ5z65ha`, firmware `0.08.001` (latest bundled: 0.08.003).
+Raw captures in `docs/captures/`.
+
+- **Setup AP**: open (no password) SSID `ReST-<id>`, 2.4 GHz; bed is `10.0.0.1`, DHCP gives clients `10.0.0.x`. `wifi.mode` = `"direct"`.
+- **No authentication**: all GETs answered 200 to an anonymous client. Only read-only requests were sent in this session.
+- Responses are JSON with `application/json`. Only GET endpoints were exercised.
+
+Confirmed shapes:
+```
+GET /api/device       {"class":"ReST Bed","name":"ReST-ee0d07","id":"d8c0a6ee0d07","address":"10.0.0.1","model":"mac","configuration":"publ5z65ha"}
+GET /api/wifi         {"ssid":"","mode":"direct","list":["<ssid>",...]}
+GET /api/wifi/list    ["<ssid>",...]
+GET /api/firmware/version  "0.08.001"
+GET /api/values       {"profile1":[34,33,23,25],"manual":[26,16,18,26]}
+GET /api/storage/writable  true
+```
+`id` is the MAC address without colons; `name` is `ReST-` + last 6 hex digits.
+
+### SSE `/api/sse` (corrections to earlier notes)
+Events sent on connect, then `time` every 1 s:
+```
+event: device       {class,name,id,address,model,configuration}
+event: preferences  {"mode":"manual","firmness":28,"distortion":2,"quiet":false,"tolerance":2,"sensitivity":80,
+                     "backprofile":[4],"sideprofile":[4],"manualprofile":[4]}
+event: body         {"present":true,"position":"unknown","moving":false,"respiration":0.0,"heartrate":0,
+                     "breathing":{"rate":0.0,"depth":0.0}}
+event: air          {"filling":false,"targets":[4],"pressures":[4],"flows":["off"x4],"minimum":5,"maximum":50}
+event: surface      {"columns":0,"rows":0,"width":0,"height":0,"units":"mmHg","pressures":[]}
+event: temperature  {"cpu":50.1,"enclosure":23.9,"cpumax":80,"enclosuremax":50,"overheated":false}
+event: time         "YYYY-MM-DD HH:MM:SS"
+```
+So there is also a `body` event (heart rate / respiration / position) and a `temperature` event that the app code
+does not wire up as listeners in the main view. `preferences` has `backprofile`/`sideprofile`/`manualprofile`
+(four-zone pressure targets, units appear to be mmHg-like integers 5..50) which explains `/preferences/<key>`:
+the key is presumably `back`/`side`/... profile names (unverified, needs a PUT test).
+
+### Still unverified (PUT/DELETE never sent)
+All write endpoints, valid `flows` strings other than `"off"`, `/preferences/<position>` key names.

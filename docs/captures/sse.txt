@@ -1,0 +1,54 @@
+event: device
+data: { "class":"ReST Bed", "name":"ReST-ee0d07", "id":"d8c0a6ee0d07", "address":"10.0.0.1", "model":"mac", "configuration":"publ5z65ha" }
+
+event: preferences
+data: { "mode":"manual", "firmness":28, "distortion":2, "quiet":false, "tolerance":2, "sensitivity":80, "backprofile":[ 28,26,28,32 ], "sideprofile":[ 19,18,25,23 ], "manualprofile":[ 26,16,18,26 ] }
+
+event: body
+data: { "present":true, "position":"unknown", "moving":false, "respiration":0.0, "heartrate":0, "breathing":{ "rate":0.0, "depth":0.0 } }
+
+event: air
+data: { "filling":false, "targets":[ 26,16,18,26 ], "pressures":[ 5,1,1,0 ], "flows":[ "off","off","off","off" ], "minimum":5, "maximum":50 }
+
+event: surface
+data: { "columns":0, "rows":0, "width":0, "height":0, "units":"mmHg", "pressures":[  ] }
+
+event: temperature
+data: { "cpu":50.1, "enclosure":23.9, "cpumax":80, "enclosuremax":50, "overheated":false }
+
+event: time
+data: "2026-10-19 02:04:59"
+
+event: time
+data: "2026-10-19 02:05:00"
+
+event: time
+data: "2026-10-19 02:05:01"
+
+event: time
+data: "2026-10-19 02:05:02"
+
+event: time
+data: "2026-10-19 02:05:03"
+
+event: time
+data: "2026-10-19 02:05:04"
+
+event: time
+data: "2026-10-19 02:05:05"
+
+event: time
+data: "2026-10-19 02:05:06"
+
+event: time
+data: "2026-10-19 02:05:07"
+
+event: time
+data: "2026-10-19 02:05:08"
+
+event: time
+data: "2026-10-19 02:05:09"
+
+event: time
+data: "2026-10-19 02:05:10"
+
