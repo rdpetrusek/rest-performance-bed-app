@@ -131,3 +131,80 @@ the key is presumably `back`/`side`/... profile names (unverified, needs a PUT t
 
 ### Still unverified (PUT/DELETE never sent)
 All write endpoints, valid `flows` strings other than `"off"`, `/preferences/<position>` key names.
+
+## Firmware analysis (2026-10-18)
+
+Extracted and analyzed the three images bundled in the app (`assets/public/firmware/`) inside the
+`restbed-fw` Docker container (Ubuntu 24.04 + file/binwalk/binutils/squashfs-tools/dpkg). See `firmware/`
+(gitignored; images not committed - large binaries, not needed since routes are documented here) and
+`Dockerfile.fw` / rebuild with:
+```
+docker build -f Dockerfile.fw -t restbed-fw .
+docker run --rm -v "<repo>/firmware:/data" restbed-fw -c '<cmd>'
+```
+
+### p1-stable.deb — P1 pump box (armhf Debian package)
+- `smartbed 0.10.098-1`, arch armhf, maintainer `Grant Derksen <grant@vista-medical.com>` (OEM: **Vista Medical**).
+- Depends on `bluez`, `libusb`, `libiw30`, `sqlite3`, `python-requests` — an old (Debian 7/wheezy-era) embedded Linux image.
+- Main binary `/usr/sbin/smartbed` — stripped ARM ELF, implements the HTTP API + webserver (serves `/var/www`,
+  a jQuery/Bootstrap debug UI at `index.html`/`debug.html`).
+- `/opt/smartbed/vitals` — separate unstripped ELF, presumably reads the pressure-sensor "vitals" (heartrate/respiration).
+- `/var/cache/smartbed/libnl.so.1.1` — netlink helper (Wi-Fi).
+- Companion scripts: `getwifilist` (`iw wlan0 scan`), `setwifimode` (direct=hostapd AP / indirect=client via
+  `/etc/network/interfaces.{direct,indirect}`, random channel 1-11 each time AP mode starts), `btdiscovery`
+  (opens classic-BT discoverable for 10s via `hciconfig`, present but disabled in `rc.local`), `sbmonitor`
+  (watchdog: curls `127.0.0.1/api/device` every 10s, kills+restarts `smartbed` on failure), `sbuploader.py`
+  (cron **every minute**, uploads un-sent rows from local SQLite `events` table to
+  `http://www.vista-medical.com/rest/api/v1/events` over **plain HTTP**, POST form body `pump,time,type,version,state`).
+- Hostname/AP SSID `ReST-<id>` is derived in `rc.local` from `wlan0`'s MAC (bytes 4-6, hex, no colons) at every boot.
+- `smartbed` binary strings confirm: no auth tokens/API keys anywhere; the only "password" string is the
+  Wi-Fi join payload field. SQL: single `events` table (`sent, time, type, version, state`). Uses
+  `/dev/spidev0.0` and `/dev/spidev0.1` to talk to the air-bladder valve hardware — log strings `Opened/Closed/
+  Locked/Unlocked valve %d`, `Start/Completed valve cycling`.
+- **Full route table** pulled from strings (superset of what the app's JS calls — confirms + extends earlier list):
+  `/api/air[/cal|/filling|/flows|/gauges|/maximum|/minimum|/pressures|/sse|/targets]`,
+  `/api/body[/breathing[/depth|/rate]|/heartrate|/moving|/position|/present|/respiration]`,
+  `/api/cloud[/connected|/enabled|/id]`,
+  `/api/device[/address|/class|/configuration|/id|/model|/name]`,
+  `/api/events`, `/api/firmware[/version]`, `/api/log`,
+  `/api/preferences[/backprofile|/cyclevalves|/distortion|/firmness|/manualprofile|/mode|/quiet|/sensitivity|/sideprofile|/tolerance]`,
+  `/api/sse`, `/api/storage[/capacity|/used|/writable]`,
+  `/api/surface[/columns|/height|/pressures|/rows|/units|/width]`,
+  `/api/temperature[/checkoverrun|/cpu|/cpumax|/enclosure|/enclosuremax|/overheated]`,
+  `/api/time`, `/api/upgrade`, `/api/uptime`, `/api/values[/<key>]`, `/api/version`,
+  `/api/wifi[/list|/mode|/provisioned|/ssid]`, `/api/www[/version]`.
+  (Not all of these were seen called from the current app JS bundle - some look like legacy/debug-UI-only routes,
+  e.g. `/api/version`, `/api/www/version`, `/api/log`, `/api/upgrade` vs the app's `/api/firmware`.)
+- References Azure cloud auth via string `azure_iot_client` and `/?api-version=2018-06-30` (Azure IoT Hub/DPS REST
+  API version), matching the app's `cloud/id` = IoT Hub device connection string flow documented above.
+
+### p3-stable.bin — P2/P3/P3A (ESP32, Espressif IDF, not recognized by `file`'s magic but same family as below)
+- Same route surface as p1 (confirms it's a reimplementation of the same API on ESP32 instead of the Linux
+  pump box) plus a `vista-medical`-style cert blob, AES tables, CRC32 tables typical of ESP-IDF TLS/OTA.
+- String `azure_iot_client` also present — same Azure IoT Hub cloud path.
+
+### p3b-stable.bin — P3B/P3C/P3D (confirmed ESP32-S2, ESP-IDF)
+- `file`: ESP-IDF application image, project `rest_espressif`, firmware version string
+  `1.08.039-1-ga5a8c0b-dirty`, built 2023-04-25, IDF `v4.4-dev-2184-g166c30e7b2`.
+- Uses `esp_mqtt_client_init` / ESP-MQTT with string `azure-devices` → confirms cloud transport moved from
+  Azure IoT Hub's HTTPS/AMQP (P1/P3) to **MQTT over TLS to `*.azure-devices.net`** on the newer boards.
+- Embedded PEM certificate + RSA/EC private key blobs (binwalk hits) — likely the device's per-unit X.509
+  identity for IoT Hub mutual-TLS auth; **did not extract/decode these from the shared firmware image** (would
+  need the actual per-device cert from a specific unit's flash, not the generic update package — the one in
+  the app bundle is probably a template/stub, not a live secret, but didn't verify).
+- Route prefixes visible: `air/, body/, cloud/, device/, firmware/, log, monitor/, preferences/, speedtest,
+  sse, storage/, surface/, temperature/, time, uptime, values/, wifi/` — consistent with p1/p3 surface, adds
+  `/api/monitor` and `/api/speedtest`.
+
+### Take-aways for the protocol doc above
+- The `/preferences/<key>` key names are now confirmed as a flat namespace alongside `mode`/`firmness`/etc:
+  `backprofile`, `sideprofile`, `manualprofile`, `distortion`, `sensitivity`, `tolerance`, `quiet`, `cyclevalves`
+  (not `manual`/`profile1`/`profile2` as originally guessed for that specific route — those are `/api/values/<key>`
+  save-slots instead).
+- `/api/air/cal`, `/api/air/gauges`, `/api/air/maximum`, `/api/air/minimum` are additional undocumented-from-JS
+  air endpoints.
+- Confirms zero authentication at the firmware level too — the binary has no token/secret check strings, it's
+  architecturally open-by-design on the local AP/LAN; the only "security" is the closed Wi-Fi network boundary
+  (and on this unit, that network boundary is itself open/unencrypted).
+- Cloud telemetry upload (`sbuploader.py`) goes out over **plaintext HTTP** to `www.vista-medical.com`, separate
+  from the HTTPS Azure Functions endpoints the app itself calls.

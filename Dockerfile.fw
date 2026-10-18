@@ -1,0 +1,6 @@
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    file binutils binwalk squashfs-tools cpio unzip xz-utils bzip2 gzip dpkg python3 ca-certificates ripgrep \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /work
+ENTRYPOINT ["/bin/bash"]
