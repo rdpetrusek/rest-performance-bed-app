@@ -88,3 +88,41 @@ is the middle generation, **P3A on a Marvell 88MW300**.
 - Firmware OTA is a simple `PUT /api/firmware` with the raw image body on every generation.
 
 See `docs/protocol.md` for the full REST/SSE API reference this all exposes.
+
+## Firmware disassembly (2026-10-19)
+
+`p3-stable.bin` was confirmed to be exactly the Marvell "MRVL" app-firmware container format:
+first 4 bytes `4d 52 56 4c` ("MRVL"), followed by the constant `0x2E9CF17B` documented in the
+[`mrvl-88mw30x-firmware-tools`](https://github.com/wfr/mrvl-88mw30x-firmware-tools) project, 3
+segments, all checksums valid (not corrupt/truncated).
+
+Reproducing this (the tool isn't vendored into this repo - clone it fresh):
+```
+git clone https://github.com/wfr/mrvl-88mw30x-firmware-tools.git
+cd mrvl-88mw30x-firmware-tools && make   # needs gcc + libelf-dev
+./bin/fwinfo       path/to/p3-stable.bin        # parses header/segments, verifies checksums
+./bin/firmware2elf path/to/p3-stable.bin out.elf
+```
+
+Result: a real ARM EABI5 ELF (`EXEC`, stripped), 3 sections mapping the original segments:
+- `.init` @ `0x00100000` (2,264 bytes) - boot/vector-table region
+- `.text` @ `0x1f0024a0` (430,312 bytes) - the application code; entry point `0x1f0024a1`
+- `.data` @ `0x20000000` (6,364 bytes) - initialized RAM data (`0x20000000` is Cortex-M SRAM base)
+
+**Disassembly note**: the ELF is stripped (no mapping symbols), and Cortex-M4F only ever
+executes Thumb/Thumb-2, never 32-bit ARM (A32) - so a plain `objdump -d` silently mis-decodes
+everything as A32 and produces garbage (`UNDEFINED`/`UNPREDICTABLE` on nearly every other
+instruction). Forcing Thumb mode fixes this completely:
+```
+arm-linux-gnueabihf-objdump -d -M force-thumb out.elf
+```
+Result: clean Thumb-2 disassembly across all 430KB of code, zero `(bad)` instructions - sane
+function prologues (`push {r3,lr}`), PC-relative literal loads, `bl`/`bx lr` call/return
+patterns throughout.
+
+**Not yet done**: this is raw, unnamed disassembly - no function boundaries or string
+cross-references yet. The useful next step would be Ghidra (ideally headless/scripted) to get
+auto-analysis, named functions, and - most importantly - cross-references from the string table
+(e.g. `"Pump = %s"`, `"cycleValves"`, `/api/preferences/cyclevalves`) back to the actual code
+that handles valve/pump control, to understand the real I2C command protocol to the
+valve-driver hardware.
