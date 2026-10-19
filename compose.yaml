@@ -1,0 +1,23 @@
+# ReST Bed self-hosted dashboard.
+#
+# The host running this container needs network access to the bed's local
+# API. Simplest setup: join the host to the bed's own Wi-Fi AP (SSID
+# "ReST-<id>", open/no password) and leave the bed in that default "direct"
+# mode permanently - see docs/protocol.md for why "indirect" (joining your
+# home Wi-Fi) is unreliable on this hardware.
+#
+# Usage:
+#   BED_HOST=10.0.0.1 docker compose up -d --build
+services:
+  app:
+    build: ./app
+    ports:
+      - "8000:8000"
+    environment:
+      - BED_HOST=${BED_HOST:-10.0.0.1}
+    volumes:
+      - restbed_data:/data
+    restart: unless-stopped
+
+volumes:
+  restbed_data:

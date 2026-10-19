@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReST Bed Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/date-fns/3.6.0/cdn.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/3.0.0/chartjs-adapter-date-fns.bundle.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>ReST Bed <span id="device-name">-</span></h1>
+  <div id="device-meta" class="muted"></div>
+</header>
+
+<main>
+  <section class="cards" id="live-cards">
+    <div class="card"><h3>Presence</h3><div class="big" id="c-present">-</div></div>
+    <div class="card"><h3>Heart rate</h3><div class="big" id="c-heartrate">-</div></div>
+    <div class="card"><h3>Respiration</h3><div class="big" id="c-respiration">-</div></div>
+    <div class="card"><h3>Movement</h3><div class="big" id="c-moving">-</div></div>
+    <div class="card"><h3>Firmness</h3><div class="big" id="c-firmness">-</div></div>
+    <div class="card"><h3>CPU temp</h3><div class="big" id="c-cputemp">-</div></div>
+  </section>
+
+  <section class="panel">
+    <h2>Last sleep session</h2>
+    <div id="session-summary" class="muted">Loading...</div>
+  </section>
+
+  <section class="panel">
+    <h2>History</h2>
+    <div class="row">
+      <label>Range:
+        <select id="range-select">
+          <option value="1">Last hour</option>
+          <option value="6">Last 6 hours</option>
+          <option value="24" selected>Last 24 hours</option>
+          <option value="168">Last 7 days</option>
+        </select>
+      </label>
+      <button id="refresh-history">Refresh</button>
+    </div>
+    <canvas id="chart-vitals" height="90"></canvas>
+  </section>
+
+  <section class="panel">
+    <h2>Controls</h2>
+    <div class="row">
+      <label>Mode:
+        <select id="mode-select">
+          <option value="manual">Manual</option>
+          <option value="pressure">Automatic (pressure)</option>
+          <option value="position">Position</option>
+        </select>
+      </label>
+      <button id="apply-mode">Apply</button>
+    </div>
+    <div class="row">
+      <label>Firmness: <input type="range" id="firmness-slider" min="0" max="100" value="28"></label>
+      <span id="firmness-value">28</span>
+      <button id="apply-firmness">Apply</button>
+    </div>
+    <div class="row">
+      <label>Manual profile (4 zones):</label>
+      <input type="number" id="zone0" value="26" style="width:4em">
+      <input type="number" id="zone1" value="16" style="width:4em">
+      <input type="number" id="zone2" value="18" style="width:4em">
+      <input type="number" id="zone3" value="26" style="width:4em">
+      <button id="apply-profile">Apply</button>
+    </div>
+    <div class="row">
+      <button id="btn-fill">Fill</button>
+      <button id="btn-stop" class="danger">Stop</button>
+    </div>
+    <div id="control-status" class="muted"></div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
