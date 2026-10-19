@@ -57,5 +57,12 @@ class BedClient:
         await self._put("/air/filling", "true")
 
     async def stop(self):
-        """All zones off (the app's 'Stop' control)."""
+        """
+        All zones off (the app's 'Stop' control). Also clears the `filling`
+        status flag - confirmed by testing that PUT /air/flows alone halts
+        the pump (flows go to "off", pressures stop moving) but leaves
+        `filling: true` stuck in /api/air until /air/filling is explicitly
+        set back to false.
+        """
         await self._put("/air/flows", '["off","off","off","off"]')
+        await self._put("/air/filling", "false")

@@ -208,3 +208,34 @@ docker run --rm -v "<repo>/firmware:/data" restbed-fw -c '<cmd>'
   (and on this unit, that network boundary is itself open/unencrypted).
 - Cloud telemetry upload (`sbuploader.py`) goes out over **plaintext HTTP** to `www.vista-medical.com`, separate
   from the HTTPS Azure Functions endpoints the app itself calls.
+
+## Control endpoints verified against live hardware (2026-10-19)
+
+Tested through the new app (`app/`) and directly via `curl` against the bed at `10.0.0.1`. All writes were
+reverted to the pre-test baseline afterward (firmness 28, manualprofile [26,16,18,26], mode manual).
+
+- **`PUT /api/preferences/firmness`** - confirmed: value takes effect, visible in next `preferences` SSE event
+  and in `GET /api/preferences`-equivalent state.
+- **`PUT /api/preferences/manualprofile`** - confirmed: value is stored and reflected back in `preferences`.
+  **Correction to earlier notes**: this does *not* directly update `/api/air/targets`. Setting
+  `manualprofile` while idle left `air.targets` unchanged. The relationship between `firmness` /
+  `manualprofile` / `air.targets` is still not fully understood - targets appear to get (re)computed from
+  some combination of these only at specific moments (e.g. when `air/filling` is triggered), not on every
+  preference write. Needs more observation to pin down exactly when/how `targets` updates.
+- **`PUT /api/preferences/mode`** - confirmed: accepts `"manual"` (write path works; did not test switching to
+  `"pressure"`/`"position"` live since those trigger automatic/different pump behavior).
+- **`PUT /api/air/filling "true"`** (Fill) - confirmed: flips `filling` to `true`, and - new finding - sets
+  `flows` to `["in","in","in","in"]` while actively pumping (previously only knew `"off"` as a valid flow
+  value). Pressures did not visibly rise within ~10s of testing at low target deltas; needs a longer
+  observation window to see the full fill curve.
+- **`PUT /api/air/flows ["off","off","off","off"]`** (Stop) - confirmed: halts the pump (flows -> `off`,
+  pressures stop changing) but does **not** clear the `filling` status flag by itself - `filling` stayed
+  `true` until `/api/air/filling` was separately PUT `false`. **`bed_client.stop()` now sends both** (flows
+  off + filling false) to fully match what a real "stop" should do; the original app's JS only ever sent
+  `air/flows` off + a `/preferences/<position>` write, so this may be a behavior the original app never
+  fully handled cleanly either.
+- **SSE staleness caveat**: the bed does not appear to push a fresh `air` (or other) SSE event on every
+  internal state change - after fixing `filling` via a direct `curl` PUT outside the app, our SSE-fed
+  `/api/live` cache still showed the stale `filling:true` for some time after a direct `GET /api/air` against
+  the bed already showed `false`. A dashboard relying solely on cached SSE state can lag reality; consider
+  also polling `GET /api/air` directly on a timer rather than trusting SSE alone for this field.
