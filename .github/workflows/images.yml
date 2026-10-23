@@ -1,0 +1,86 @@
+# Builds each service's image (cmd/server -> api, ui -> ui) for amd64 and
+# arm64. Pull requests only build; pushes to main also publish to GHCR as
+# ghcr.io/rdpetrusek/rest-performance-bed-app/<service>, tagged `main` and
+# `sha-<short commit>`. The cluster deploys them through
+# platform-infrastructure-deployments (systems/rest-bed/).
+name: images
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # Same checks as `make lint` and `make test`. internal/wifi is
+      # Windows-only, so vet it for that platform too.
+      - run: test -z "$(gofmt -l cmd internal)" || { gofmt -l cmd internal; exit 1; }
+      - run: go vet ./... && GOOS=windows go vet ./...
+      - run: go test ./...
+      - run: npm ci
+        working-directory: ui
+      - run: npm run test:ci
+        working-directory: ui
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: api
+            context: .
+            dockerfile: cmd/server/Dockerfile
+          - service: ui
+            context: ui
+            dockerfile: ui/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.service }}
+          tags: |
+            type=raw,value=main,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
