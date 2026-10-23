@@ -1,0 +1,8 @@
+# The build context is the whole repo, which also holds personal data (data/),
+# vendor binaries (apk/, firmware/) and the UI - send only what the Go build
+# needs.
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/

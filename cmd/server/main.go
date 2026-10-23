@@ -1,8 +1,9 @@
-// Command server is the ReST Bed dashboard: a self-hosted replacement for the
-// dead vendor cloud. It connects directly to the bed's local HTTP API (see
-// docs/protocol.md), stores every SSE event into a local SQLite database, and
-// serves a small dashboard for live state, history charts, basic controls,
-// and an offline/deterministic "last sleep session" summary. No cloud, no
+// Command server is the ReST Bed dashboard's API: a self-hosted replacement
+// for the dead vendor cloud. It connects directly to the bed's local HTTP API
+// (see docs/protocol.md), stores every SSE event into a local SQLite
+// database, and serves the JSON API the Angular app (ui/) calls for live
+// state, history charts, basic controls, and an offline/deterministic "last
+// sleep session" summary. No cloud, no
 // account, no external AI calls.
 //
 // Usage:
