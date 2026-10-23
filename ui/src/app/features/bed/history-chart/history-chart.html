@@ -1,0 +1,16 @@
+<section class="panel">
+  <h2>History</h2>
+  <div class="row">
+    <label>
+      Range:
+      <select [value]="store.rangeHours()" (change)="onRangeChange($any($event.target).value)">
+        <option value="1">Last hour</option>
+        <option value="6">Last 6 hours</option>
+        <option value="24">Last 24 hours</option>
+        <option value="168">Last 7 days</option>
+      </select>
+    </label>
+    <button type="button" (click)="refresh()">Refresh</button>
+  </div>
+  <canvas #canvas height="90"></canvas>
+</section>

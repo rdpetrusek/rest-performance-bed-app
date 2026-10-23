@@ -9,12 +9,18 @@
 # Usage:
 #   BED_HOST=10.0.0.1 docker compose up -d --build
 services:
-  app:
-    build: ./app
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
     ports:
-      - "8000:8000"
+      - "8097:8000"
     environment:
       - BED_HOST=${BED_HOST:-10.0.0.1}
+      # Extra /24 prefixes to scan for beds, comma-separated (e.g. "192.168.1").
+      # BED_HOST's own /24 is always scanned; the container can't see the
+      # host's LAN interfaces on Docker Desktop, so discovery needs this.
+      - SCAN_SUBNETS=${SCAN_SUBNETS:-}
     volumes:
       - restbed_data:/data
     restart: unless-stopped

@@ -1,0 +1,41 @@
+<section class="cards">
+  <div class="card" [class.warning]="padWarning()" role="status">
+    <h3>Sensor pad</h3>
+    <div class="big">{{ padLabel() }}</div>
+    @if (padNote()) {
+      <div class="muted">{{ padNote() }}</div>
+    }
+  </div>
+  <div class="card">
+    <h3>Presence</h3>
+    <div class="big">{{ present() }}</div>
+  </div>
+  <div class="card">
+    <h3>Heart rate</h3>
+    <div class="big">{{ heartRate() }}</div>
+  </div>
+  <div class="card">
+    <h3>Respiration</h3>
+    <div class="big">{{ respiration() }}</div>
+  </div>
+  <div class="card">
+    <h3>Movement</h3>
+    <div class="big">{{ moving() }}</div>
+  </div>
+  <div class="card">
+    <h3>Firmness</h3>
+    <div class="big">{{ firmness() }}</div>
+  </div>
+  <div class="card">
+    <h3>CPU temp</h3>
+    <div class="big">{{ cpuTemp() }}</div>
+  </div>
+  <div class="card">
+    <h3>Air</h3>
+    <div class="big">{{ filling() }}</div>
+  </div>
+  <div class="card">
+    <h3>Pressures</h3>
+    <div class="big">{{ pressures() }}</div>
+  </div>
+</section>

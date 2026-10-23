@@ -1,0 +1,176 @@
+import { HttpErrorResponse } from '@angular/common/http';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { Observable } from 'rxjs';
+
+import { BedApi } from './bed-api';
+import {
+  BodyData,
+  DEFAULT_AIR_LIMITS,
+  DiscoveredDevice,
+  HistoryRow,
+  LiveSnapshot,
+  ManualProfile,
+  Preferences,
+  SessionSummary,
+} from './bed-models';
+
+const LIVE_POLL_MS = 3000;
+const SESSION_POLL_MS = 60_000;
+const DEVICE_POLL_MS = 15_000;
+
+/** Live/history/control state for the one bed this dashboard talks to. */
+@Injectable({ providedIn: 'root' })
+export class BedStore {
+  private readonly api = inject(BedApi);
+
+  readonly live = signal<LiveSnapshot>({});
+  readonly liveReachable = signal(true);
+
+  /** The bed's own pressure limits; firmness and manual zones must stay inside them. */
+  readonly airLimits = computed(() => {
+    const air = this.live().air;
+    if (air?.minimum === undefined || air?.maximum === undefined || air.minimum > air.maximum) {
+      return DEFAULT_AIR_LIMITS;
+    }
+    return { min: air.minimum, max: air.maximum };
+  });
+
+  /**
+   * Whether the sensor pad is connected. With a "z00" configuration the
+   * firmware never reads the pad, so a missing one doesn't block air control.
+   */
+  readonly padStatus = computed<'connected' | 'disconnected' | 'bypassed' | 'unknown'>(() => {
+    const { surface, device } = this.live();
+    if (device?.configuration?.includes('z00')) return 'bypassed';
+    if (!surface) return 'unknown';
+    return surface.rows && surface.columns ? 'connected' : 'disconnected';
+  });
+
+  readonly session = signal<SessionSummary | null>(null);
+  readonly sessionError = signal<string | null>(null);
+
+  readonly rangeHours = signal(24);
+  readonly historyBody = signal<HistoryRow<BodyData>[]>([]);
+  readonly historyPreferences = signal<HistoryRow<Preferences>[]>([]);
+
+  readonly controlStatus = signal('');
+  readonly controlError = signal(false);
+
+  readonly devices = signal<DiscoveredDevice[]>([]);
+
+  constructor() {
+    this.refreshLive();
+    this.refreshSession();
+    this.refreshHistory();
+    this.refreshDevices();
+    const liveTimer = setInterval(() => this.refreshLive(), LIVE_POLL_MS);
+    const sessionTimer = setInterval(() => this.refreshSession(), SESSION_POLL_MS);
+    const deviceTimer = setInterval(() => this.refreshDevices(), DEVICE_POLL_MS);
+    inject(DestroyRef).onDestroy(() => {
+      clearInterval(liveTimer);
+      clearInterval(sessionTimer);
+      clearInterval(deviceTimer);
+    });
+  }
+
+  refreshLive(): void {
+    this.api.live().subscribe({
+      next: (snapshot) => {
+        this.live.set(snapshot);
+        this.liveReachable.set(true);
+      },
+      error: (err) => {
+        this.liveReachable.set(false);
+        console.error('refreshLive', err);
+      },
+    });
+  }
+
+  refreshSession(): void {
+    this.api.lastSession().subscribe({
+      next: (session) => {
+        this.session.set(session);
+        this.sessionError.set(null);
+      },
+      error: (err) => {
+        this.sessionError.set('Error loading session summary.');
+        console.error('refreshSession', err);
+      },
+    });
+  }
+
+  refreshHistory(): void {
+    const hours = this.rangeHours();
+    this.api.historyBody(hours).subscribe({
+      next: (rows) => this.historyBody.set(rows),
+      error: (err) => console.error('refreshHistory body', err),
+    });
+    this.api.historyPreferences(hours).subscribe({
+      next: (rows) => this.historyPreferences.set(rows),
+      error: (err) => console.error('refreshHistory preferences', err),
+    });
+  }
+
+  setRangeHours(hours: number): void {
+    this.rangeHours.set(hours);
+    this.refreshHistory();
+  }
+
+  refreshDevices(): void {
+    this.api.devices().subscribe({
+      next: (devices) => this.devices.set(devices),
+      error: (err) => console.error('refreshDevices', err),
+    });
+  }
+
+  selectDevice(address: string): void {
+    this.api.selectDevice(address).subscribe({
+      next: () => {
+        this.controlStatus.set(`OK: switched to ${address}`);
+        this.controlError.set(false);
+        this.refreshLive();
+      },
+      error: (err: HttpErrorResponse) => {
+        this.controlStatus.set(`Failed: switch to ${address} - ${err.message}`);
+        this.controlError.set(true);
+      },
+    });
+  }
+
+  applyMode(mode: string): void {
+    this.runControl(`mode (${mode})`, this.api.setMode(mode));
+  }
+
+  applyFirmness(value: number): void {
+    this.runControl('firmness', this.api.setFirmness(value));
+  }
+
+  applyManualProfile(zones: ManualProfile): void {
+    this.runControl('manual profile', this.api.setManualProfile(zones));
+  }
+
+  fill(): void {
+    this.runControl('fill', this.api.fill());
+  }
+
+  stop(): void {
+    this.runControl('stop', this.api.stop());
+  }
+
+  setConfiguration(configuration: string): void {
+    this.runControl(`configuration (${configuration})`, this.api.setConfiguration(configuration));
+  }
+
+  private runControl(label: string, request: Observable<void>): void {
+    request.subscribe({
+      next: () => {
+        this.controlStatus.set(`OK: ${label}`);
+        this.controlError.set(false);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.controlStatus.set(`Failed: ${label} - ${err.message}`);
+        this.controlError.set(true);
+      },
+    });
+  }
+}

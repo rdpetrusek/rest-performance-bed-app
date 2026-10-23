@@ -46,6 +46,9 @@ is the middle generation, **P3A on a Marvell 88MW300**.
   to the Boditrak pad directly as an attached USB device. Confirmed live on two separate units
   (both broadcasting Wi-Fi fine with `/api/surface` empty, i.e. no sensor pad actively
   connected) that Wi-Fi does **not** depend on this USB connection on this generation.
+  **Air control does depend on it, though**: with the pad disconnected, the firmware won't run the
+  pump or valves at all. A loose pad USB connector was the cause of "Fill does nothing" on `ee0d07`,
+  and reseating it fixed it (see `protocol.md`, "Root cause: sensor pad gates all air control").
 - Other on-chip peripheral drivers present: I2C, UART, DMA. No GPIO/SPI driver strings
   surfaced for this chip, suggesting valve/pump/pressure-transducer hardware is likely driven
   over **I2C** (possibly an I2C valve-driver IC / ADC combo) rather than SPI like the P1 board.
@@ -56,6 +59,41 @@ is the middle generation, **P3A on a Marvell 88MW300**.
   SDK's hardcoded fallback - that's how the chip was identified).
 - Model codes: `maa` = P2, `mab` = P3, `mac` = P3A (confirmed to be the model in this bed).
   Firmware file `p3-stable.bin`, version string seen live: `0.08.001` (latest bundled: `0.08.003`).
+
+### Pneumatics and actuator outputs (owner photos of `ReST-ee0eb9` + firmware, 2026-10-19)
+
+Physical (from the owner's photo dossier, `ReST_Performance_Hardware_Full_Documentation.md`):
+- Wi-Fi: AzureWave **AW-CU344** module, shield printed with the MAC `D8C0A6EE0EB9`.
+- Power: **24 V** - XP Power **VEC65US24** adapter (24 V, 2.71 A, 65 W) into barrel jack **J6**.
+- **Four** Qingdao Ahead **A100**-series diaphragm pumps (label `A100-2...`, suffix cut off; 24 V assumed
+  from the supply, not read off the label).
+- KOGE **KSV4WD-24A-5B** 24 V solenoid valves, white manifold.
+- Four Omron **2SMPP-02** gauge-pressure sensors on the PCB (the `air.pressures` / `/api/air/gauges`
+  channels) - separate from the Boditrak pad.
+- Nine 2-pin actuator connectors **J7-J15**; U19/U20 tentatively read as **74HC595** shift registers.
+
+Firmware actuator layer (`p3-stable.elf`, Ghidra):
+- Air-control task `FUN_1f002f10` (an RTOS task entry; not auto-detected - create it with `mkfn:1f002f10`).
+- Outputs go either straight to MCU GPIO or, on board variants 3/4, as a 16-bit word written by
+  `FUN_1f00bc40(0x18, buf, 2)` - consistent with two chained 74HC595s.
+- **Nine outputs**, matching J7-J15 by count (mapping not traced): 4 zone valves (`FUN_1f0026d8`, per-zone
+  GPIO table / bit masks), 1 single output (`FUN_1f002720`, GPIO 0x11 / bit 0x1000 - probably a vent valve),
+  and **4 pump outputs switched together** (`FUN_1f0025dc`: GPIO 0x12/0x16/0x17/0x18 or bits 0xe001). A mode
+  gated by `FUN_1f00adfc()` runs only one pump at a time, rotating.
+- Fill mode opens every zone under 20, turns the pumps on, and pulses the open valves (2 ms on / 1 ms off)
+  in ~3 s rounds until every zone reaches 20.
+- A failed pressure-sensor read leaves the last value in place, so frozen readings can mean a dead
+  sensor path, not necessarily zero pressure.
+
+**Fault on `ee0eb9` (2026-10-19) - weak power adapter:** with `pubr5z00ha` (pad bypassed), Fill entered
+fill mode and all flows went `in`, but the four pumps only made a faint sound and raw gauges didn't move
+even with the tubes sealed. Swapping in the left box's VEC65US24 made the pumps run with clearly more
+power. The right box's own adapter supplies enough for the logic but sags under pump load. Fix: replace
+it with a 24 V, ≥2.71 A (≥65 W) supply with a matching J6 barrel plug and polarity.
+
+**Diagnosis order that worked, for next time:** (1) `/api/log` repeating `Attempting to connect to
+sensor...` = pad gate - reseat the pad or use a `z00` configuration; (2) Fill sets flows `in` but nothing
+runs = suspect the 24 V adapter first (swap with the other box's) before the pumps or the board.
 
 ## P3B / P3C / P3D - newest generation: Espressif ESP32-S2 (`p3b-stable.bin`)
 - Confirmed via `file`'s own magic-byte detection (a real ESP-IDF app image) plus

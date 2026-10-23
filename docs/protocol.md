@@ -239,3 +239,212 @@ reverted to the pre-test baseline afterward (firmness 28, manualprofile [26,16,1
   `/api/live` cache still showed the stale `filling:true` for some time after a direct `GET /api/air` against
   the bed already showed `false`. A dashboard relying solely on cached SSE state can lag reality; consider
   also polling `GET /api/air` directly on a timer rather than trusting SSE alone for this field.
+
+## `air.targets` investigation (2026-10-19)
+
+Both of the user's two beds (`ReST-ee0d07` = P3A "left", `publ5z65ha`; `ReST-ee0eb9` = P3A "right",
+`pubr5z65ha` - a matched dual-zone pair, per their `l`/`r` configuration codes) are now provisioned into
+indirect mode and reachable on the home LAN (`.240` and `.239` respectively). `ee0d07` is a real, in-use bed
+(sensor pressures show live jitter; user physically confirmed air in it after a Fill); `ee0eb9` is currently
+not connected to a bladder/pad (pressure readings were bit-for-bit frozen across a 60s poll - no sensor
+noise at all, unlike `ee0d07`).
+
+**Motivating symptom**: Fill audibly worked once on `ee0d07` (pump kicked on, bed physically filled), but
+every later Fill attempt - after setting firmness, manualprofile, and both `"manual"` and `"position"` mode -
+did nothing. Root cause isolated to `air.targets` being stuck at `[20,20,20,20]` regardless of any
+preference write, while `air.pressures` was already above that value (so Fill, which appears to mean "pump
+until pressure reaches target," correctly had nothing left to do).
+
+**Confirmed via Ghidra (headless, against `tools/out/p3-stable.elf`)**, not just live testing:
+- `PUT /preferences/{back,side,manual}profile` are handled by three near-identical setter functions
+  (`FUN_1f00aecc`, `FUN_1f00af60`, `FUN_1f00aff4` in this build) that copy the new 4-int array into the live
+  preference variable and persist each element to flash (per-zone keys, e.g. `manualProfile0..3`) - **none of
+  them write anything resembling `targets`**. This is a hard confirmation, from the actual firmware code, of
+  what live testing already suspected: setting the manual profile never updates `air.targets`.
+- `FUN_1f00abd4` loads `backProfile0..3`/`sideProfile0..3`/`manualProfile0..3` from flash into the live
+  preference variables - this has the shape of a boot-time initializer (reads persisted config with
+  fallback defaults), not something called per-request.
+- The literal JSON field names `filling`/`targets`/`flows`/`pressures` do not exist anywhere in the firmware
+  as strings - only the route paths (`/api/air/filling` etc.) do. The `/api/air` response is therefore built
+  by a generic, table/descriptor-driven JSON framework (common in these embedded HTTP SDKs), not per-field
+  printf-style code - so there is no single findable "compute targets" function to grep for. Confirming what
+  actually sets `targets` would need reverse-engineering that generic framework's descriptor tables, a much
+  larger undertaking than everything above.
+
+> **Superseded (2026-10-19, later):** the real cause of everything in this section was a disconnected
+> Boditrak sensor pad - see "Root cause: sensor pad gates all air control" below. With the pad
+> connected, `targets` follows `manualprofile` live, with no reboot. The boot-time theory below was
+> built on observations made while the pad was disconnected and should not be relied on.
+
+**Working theory (unconfirmed)**: `air.targets` is computed once at boot from whatever `manualprofile` (or
+related preferences) are stored at that time, not recomputed live on preference writes. Supporting evidence:
+the firmware's own preference-loading function runs at boot, not per-request; `ee0eb9`'s `manualprofile` has
+apparently never been touched and sits at exactly `[20,20,20,20]`, matching its `targets` exactly, while
+`ee0d07`'s `manualprofile` was pushed to `[45,45,45,45]` live and its `targets` stayed at the old `[20,...]`
+value, consistent with "last computed before our changes."
+
+**Confirmed** (not just theorized): set `ee0eb9`'s `manualprofile` to `[45,45,45,45]` (while its `targets`
+was still `[20,20,20,20]`), power-cycled it, and `targets` came back as `[45,45,45,45]` - exactly matching
+the profile set before the reboot. `air.targets` is computed once at boot from the stored manual profile,
+confirmed by a clean before/after test, not recomputed live on preference writes. (A first power-cycle on
+`ee0eb9`, done before its profile was changed from the matching default `[20,20,20,20]`, was inconclusive on
+this specific question but did confirm indirect-mode Wi-Fi and the `filling` flag both survive/reset sanely
+across a reboot.)
+
+**New wrinkle**: the moment `air/filling` is triggered, `targets` changes again - and not to the
+boot-computed profile value. Right after the reboot above, `targets` was `[45,45,45,45]`; triggering Fill
+immediately reset it to `[20,20,20,20]` on `ee0eb9`, and to `[30,30,30,30]` on `ee0d07` (a third, distinct
+value from any profile either bed had stored). So `air/filling` appears to compute its own target from
+something other than `manualprofile` - still unidentified. This means every fill observed all day (both
+beds, every profile/firmness/mode tried) was converging on whatever Fill itself computes, not the user's
+chosen profile - consistent with the original successful fill on `ee0d07` having settled around
+pressure ~23-27 regardless of its profile.
+
+### Wi-Fi mode ruled out as the cause of "Fill does nothing" (2026-10-19)
+
+`ee0d07`'s Fill worked once (audible pump, physically confirmed air in the bed) before it was provisioned
+into indirect mode; every attempt since has produced no audible pump activity. To test whether indirect mode
+itself was the cause, `ee0d07` was switched back to direct mode (`PUT /wifi/mode "direct"`) and Fill was
+retried while physically listening - **still no pump sound**, same as in indirect mode. Network mode is
+therefore ruled out as the explanation. (The same direct-mode retest on `ee0eb9` also produced no sound, but
+that bed was never a valid test case for this question - it has no bladder/pump module connected at all,
+confirmed separately by its pressure sensor readings being completely frozen bit-for-bit across a 60s poll,
+unlike `ee0d07`'s, which show real jitter.)
+
+Leading theory now: repeated preference writes and fill start/stops on `ee0d07` without a single power cycle
+all day may have wedged the pump/valve control task - `ee0eb9` was power-cycled twice tonight and behaved
+consistently each time; `ee0d07` has not been power-cycled once. Not yet tested (physically inconvenient to
+reach).
+
+### Root cause: sensor pad gates all air control (2026-10-19, confirmed by repair)
+
+**The pump/valves do nothing unless the Boditrak USB sensor pad is connected and reporting.** Fill
+returns 204 but never starts (`filling` stays `false`, `flows` stay `off`, no `Pump = %s` log line), and
+`targets` stops tracking `manualprofile`. No API call works around it.
+
+Fixed physically on `ee0d07`: unzipped the mattress cover, reseated the pad's USB cable at the pump
+box (unplug/replug, wiggle) until it connected. Immediately afterward, without a reboot,
+`targets` went from the stale `[30,30,30,30]` to the stored `manualprofile` `[10,10,10,10]` and the
+valves opened and let air out.
+
+How to diagnose it from the API (all read-only):
+- `GET /api/log` (plain-text firmware log ring buffer) repeats `Attempting to connect to sensor...`
+  while the pad is disconnected; once it connects that stops and `Added event to memory and storage`
+  lines appear.
+- `GET /api/surface` has `rows`/`columns` `0` and empty `pressures` while disconnected; connected, it
+  returned `columns:9, rows:31, width:482, height:1473, units:"mmHg"`.
+- `body.position` is `"unknown"` while disconnected, `"empty"` once the pad is up and nobody's on it.
+
+A flaky connector is the likely failure mode: the pad worked once (the first successful Fill), then
+dropped out, and it took repeated reseating to come back.
+
+Other endpoints confirmed live the same day (GET only):
+- `GET /api/air/gauges` - raw per-zone ADC counts, e.g. `[5074,3871,3729,2212]`.
+- `GET /api/air/cal` - per-zone `[offset, scale]` pairs, e.g. `[3008,0.012, 1802,0.012, 1953,0.013, 38,0.013]`.
+  `pressures[z] = trunc((gauges[z] - offset[z]) * scale[z])` - verified exactly for all 4 zones.
+  (Zone 4's offset of 38 vs ~1800-3000 for the others looks like a suspect calibration.)
+- `GET /api/preferences/cyclevalves` -> `true`; `GET /api/uptime` -> `"H:MM:SS"`; `/api/monitor` is 404 on P3A.
+- Firmware strings `Pump = %s`, `Exiting fill mode`, `pumptime` exist and should show up in `/api/log`
+  during a fill.
+
+Preference writes outside `minimum`..`maximum` (5..50) are accepted without error (seen: `firmness` 92,
+`manualprofile` `[1,1,1,1]`), so the client has to clamp.
+
+### How the firmware gates air control on the pad (Ghidra, `p3-stable.elf`, 2026-10-19)
+
+Script: `tools/ghidra-scripts/DecompRefs.java` (decompiles functions by string, address, pointer, or caller).
+
+- **Main control loop** `FUN_1f00a288` (every 100 ms) calls `FUN_1f00c080` (read one pad frame) first; if it
+  returns 0 it calls `FUN_1f007d74` and skips the rest of the cycle - target computation, fill start/stop,
+  pump and valve drive. That is the gate.
+- `FUN_1f00c080` **returns true without touching the pad when the bed type is 4-7.** Bed type comes from the
+  **`configuration`** string (persisted under flash key `configuration`), mapped by `FUN_1f008284`:
+
+  | configuration | type | pad |
+  |---|---|---|
+  | `publ5z65ha` / `pubr5z65ha` | 0 / 1 | required (5-zone left/right - the user's two beds) |
+  | `pibl3z49ha` / `pibr3z49ha` | 2 / 3 | required (3-zone) |
+  | `publ5z00ha` / `pubr5z00ha` | 4 / 5 | **never read** |
+  | `pibl3z00ha` / `pibr3z00ha` | 6 / 7 | **never read** |
+
+  `z65`/`z49` identify the pad; `z00` = no pad (matches the app JS testing configs for an `00ha` suffix).
+  Types 1 and 3 mirror the pad's columns (right-side beds). Switching to a type 4-7 also resets one other
+  persisted value to 2 (`FUN_1f008214`). In "pressure" (automatic) mode a sensorless type uses a fallback
+  that holds around `firmness`, since there is no body map.
+- `PUT /api/device/configuration "<string>"` is wrapped as `bed.Client.SetConfiguration`, restricted to the
+  eight strings above. **Not yet exercised against a live bed.**
+
+**Pad wire protocol** ("FSA" - Vista Medical's force-sensing array), from `FUN_1f00ef5c`: ASCII-framed
+request/response over the pad's USB link. A frame is `FSA:` + number of length digits + `:` + length + `.` +
+payload, e.g. `FSA:1:7.columns`. Commands seen: `columns`, `rows`, `width`, `height` (replies parsed as
+decimal integers), `scan` (reply = rows×columns little-endian int16 readings; >0xffe = saturated),
+`caldate`, `calsize`, `caltime`, `calsector`. USB side: `[usbvmusc]` "Vista Medical USB Class" driver,
+accepted VID/PID table at `*(0x1f054104)` (not yet dumped).
+
+### Exact calls, verified against the real app's own code (2026-10-19)
+
+The following is independent verification, not a restatement of this file's own earlier notes - extracted
+directly from the official app's bundled web assets (`out/apktool/assets/public/assets/index-b3d7c305.js`,
+a Capacitor/webview app bundle; minified, one line per module). Confirmed byte-for-byte identical to
+`internal/bed/client.go`'s request bodies.
+
+```js
+// Fill - PUT /api/air/filling, body "true" (bare, unquoted => JSON boolean)
+tO = async e => {
+  try {
+    const t = `http://${e.address}/api/air/filling`;
+    await fetch(t, {body: "true", cache: "no-cache", method: "PUT", referrer: "no-referrer"})
+  } catch(t) { console.error(t) }
+}
+
+// Stop (zero flows) - PUT /api/air/flows, body ["x","x","x","x"] (quoted strings)
+oO = async (e, t) => {
+  try {
+    const n = `http://${e.address}/api/air/flows`,
+          r = `["${t[0]}","${t[1]}","${t[2]}","${t[3]}"]`;
+    await fetch(n, {body: r, cache: "no-cache", method: "PUT", referrer: "no-referrer"})
+  } catch(n) { console.error(n) }
+}
+
+// Manual profile - PUT /api/preferences/manualprofile, body [n,n,n,n] (unquoted numbers)
+og = async (e, t) => {
+  try {
+    const n = `http://${e.address}/api/preferences/manualprofile`,
+          r = `[${t[0]},${t[1]},${t[2]},${t[3]}]`;
+    await fetch(n, {body: r, cache: "no-cache", method: "PUT", referrer: "no-referrer"})
+  } catch(n) { console.error(n) }
+}
+
+// Generic profile setter (also used for backprofile/sideprofile - same array shape as manualprofile,
+// never implemented in our client since never tested live)
+AS = async (e, t, n) => {
+  try {
+    const r = `http://${e.address}/api/preferences/${t.toString()}`,
+          o = `[${n[0]},${n[1]},${n[2]},${n[3]}]`;
+    await fetch(r, {body: o, cache: "no-cache", method: "PUT", referrer: "no-referrer"})
+  } catch(r) { console.error(r) }
+}
+
+// Firmness - PUT /api/preferences/firmness, body is the bare number, no quotes/brackets
+T9 = async (e, t) => {
+  try {
+    const n = `http://${e.address}/api/preferences/firmness`;
+    await fetch(n, {body: `${t}`, cache: "no-cache", method: "PUT", referrer: "no-referrer"})
+  } catch(n) { console.error(n) }
+}
+
+// Mode - PUT /api/preferences/mode, body "manual"/"position"/"pressure" (quoted string).
+// Appears twice in the bundle under different minified names (nO, EW) - same body, likely
+// duplicated across two bundle chunks rather than two different call sites.
+nO = async (e, t) => {
+  try {
+    const n = `http://${e.address}/api/preferences/mode`;
+    await fetch(n, {body: `"${t.toString()}"`, cache: "no-cache", method: "PUT", referrer: "no-referrer"})
+  } catch(n) { console.error(n) }
+}
+```
+
+No `Content-Type` header is set on any of these (matches `cleartext`/unset-content-type behavior noted
+elsewhere in this doc) and none set anything beyond `cache`/`method`/`referrer`/`body`. There is no hidden
+extra step, header, or parameter in the real app's Fill/Stop/profile/firmness/mode calls beyond what's
+already in `internal/bed/client.go`.

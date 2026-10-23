@@ -1,0 +1,19 @@
+<section class="panel">
+  <h2>Last sleep session</h2>
+
+  @if (store.sessionError()) {
+    <div class="muted">{{ store.sessionError() }}</div>
+  } @else if (!store.session()) {
+    <div class="muted">Loading...</div>
+  } @else if (!store.session()!.found) {
+    <div class="muted">{{ store.session()!.reason || 'No session found yet.' }}</div>
+  } @else {
+    <div>
+      <strong>{{ store.session()!.ongoing ? 'In progress' : 'Completed' }}</strong> -
+      started {{ startedAt() }}, duration {{ store.session()!.duration_minutes }} min<br />
+      {{ heartRateLine() }}<br />
+      {{ respirationLine() }}<br />
+      {{ movementLine() }}
+    </div>
+  }
+</section>

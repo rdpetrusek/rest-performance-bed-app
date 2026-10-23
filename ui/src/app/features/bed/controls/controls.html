@@ -1,0 +1,71 @@
+<section class="panel">
+  <h2>Controls</h2>
+
+  <div class="row">
+    <label>
+      Mode:
+      <select [value]="mode()" (change)="setMode($any($event.target).value)">
+        <option value="manual">Manual</option>
+        <option value="pressure">Automatic (pressure)</option>
+        <option value="position">Position</option>
+      </select>
+    </label>
+    <button type="button" (click)="applyMode()">Apply</button>
+  </div>
+
+  <div class="row">
+    <label>
+      Firmness:
+      <input
+        type="range"
+        [min]="store.airLimits().min"
+        [max]="store.airLimits().max"
+        [value]="firmness()"
+        (input)="setFirmness($any($event.target).value)"
+      />
+    </label>
+    <span>{{ firmness() }}</span>
+    <button type="button" (click)="applyFirmness()">Apply</button>
+  </div>
+
+  <div class="row">
+    <label id="zones-label">Manual profile (4 zones):</label>
+    @for (zone of zones(); track $index) {
+      <input
+        type="number"
+        class="zone"
+        [attr.aria-label]="'Zone ' + ($index + 1)"
+        [min]="store.airLimits().min"
+        [max]="store.airLimits().max"
+        [value]="zone"
+        (change)="setZone($any($index), $any($event.target))"
+      />
+    }
+    <button type="button" (click)="applyManualProfile()">Apply</button>
+  </div>
+  <div class="muted">Allowed range: {{ store.airLimits().min }}–{{ store.airLimits().max }} (the bed's own limits)</div>
+
+  @if (padConfig(); as cfg) {
+    <div class="row">
+      <span>
+        Sensor pad mode:
+        <strong>{{ cfg.bypassed ? 'Bypassed (no pad needed)' : 'Pad required' }}</strong>
+        <span class="muted">({{ cfg.current }})</span>
+      </span>
+      <button type="button" (click)="togglePadBypass()">
+        {{ cfg.bypassed ? 'Use the pad again' : 'Bypass the pad' }} ({{ cfg.other }})
+      </button>
+    </div>
+    <div class="muted">
+      Bypassing keeps pump and valve control working when the pad is offline, but turns off presence, heart rate,
+      breathing and the automatic mode's body map.
+    </div>
+  }
+
+  <div class="row">
+    <button type="button" (click)="fill()">Fill</button>
+    <button type="button" class="danger" (click)="stop()">Stop</button>
+  </div>
+
+  <div class="muted" [style.color]="statusColor()">{{ store.controlStatus() }}</div>
+</section>
