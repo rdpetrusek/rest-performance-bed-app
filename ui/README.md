@@ -1,59 +1,33 @@
-# Ui
+# ReST Bed dashboard UI
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.1.2.
+The Angular frontend for the dashboard. It talks only to the API's relative
+`/api/*` paths, so whatever serves it has to route `/api` to `cmd/server`.
 
-## Development server
-
-To start a local development server, run:
-
-```bash
-ng serve
-```
-
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
-
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+## Develop
 
 ```bash
-ng generate component component-name
+npm ci
+npm start          # ng serve on :4200; proxy.conf.json sends /api to localhost:8000
 ```
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+Run the API alongside it (`make run` from the repo root).
 
-```bash
-ng generate --help
-```
+## Scripts
 
-## Building
+| Script | What it does |
+|---|---|
+| `npm run build` | Production build into `dist/ui/browser/` |
+| `npm run test:ci` | Unit tests once, no watch |
+| `npm run lint` | Development build (type and template checks) |
+| `npm run clean` | Remove `dist/` |
 
-To build the project run:
+## Image
 
-```bash
-ng build
-```
+`Dockerfile` builds the app and serves it on `nginx:1.27-alpine`.
+`nginx.conf.template` serves the app and proxies `/api/` to `API_UPSTREAM`
+(default `api:8000`, the compose service name). It falls back to
+`index.html` for app routes, never caches `index.html`, and caches hashed
+bundles for good. `compose.yaml` is this service's fragment, included from
+the root `compose.yaml`.
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
-
-## Running unit tests
-
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+Coding rules for this workspace are in `.claude/CLAUDE.md`.

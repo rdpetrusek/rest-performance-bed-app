@@ -1,6 +1,9 @@
-# ReST Bed self-hosted dashboard.
+# ReST Bed self-hosted dashboard. Each service lives in its own folder with
+# its own Dockerfile and compose fragment; this file only names the project
+# and includes them. Remove a service by deleting its folder and its line
+# below.
 #
-# The host running this container needs network access to the bed's local
+# The host running these containers needs network access to the bed's local
 # API. Simplest setup: join the host to the bed's own Wi-Fi AP (SSID
 # "ReST-<id>", open/no password) and leave the bed in that default "direct"
 # mode permanently - see docs/protocol.md for why "indirect" (joining your
@@ -12,22 +15,6 @@
 # the checkout folder is renamed.
 name: rest-bed-app
 
-services:
-  dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile.dashboard
-    ports:
-      - "8097:8000"
-    environment:
-      - BED_HOST=${BED_HOST:-10.0.0.1}
-      # Extra /24 prefixes to scan for beds, comma-separated (e.g. "192.168.1").
-      # BED_HOST's own /24 is always scanned; the container can't see the
-      # host's LAN interfaces on Docker Desktop, so discovery needs this.
-      - SCAN_SUBNETS=${SCAN_SUBNETS:-}
-    volumes:
-      - restbed_data:/data
-    restart: unless-stopped
-
-volumes:
-  restbed_data:
+include:
+  - cmd/server/compose.yaml # api: Go JSON API, distroless
+  - ui/compose.yaml         # ui: Angular app on nginx, proxies /api to api

@@ -40,12 +40,26 @@ corrects something, update the matching doc.
 
 ## Architecture
 
-Two Go binaries. `cmd/server` is the dashboard: an Angular single-page app
-plus a small JSON API in one process - no RPC layer, unlike `periscope2`'s
-three-service split, because there is no capture pipeline or cross-machine
-boundary here to justify one. `cmd/wifi-watcher` is a separate, optional
-sidecar (see below) - it was kept out of `cmd/server` on purpose, since it
-needs host Wi-Fi privileges the dashboard itself has no reason to have.
+Three services, each its own image:
+
+| Service | Folder | Image |
+|---|---|---|
+| ui | `ui/` | Angular build on `nginx:1.27-alpine`; nginx also proxies `/api/` to the API (`API_UPSTREAM`, default `api:8000`) |
+| api | `cmd/server/` | The Go JSON API on `distroless/static` - no UI embedded, no RPC layer (no capture pipeline or cross-machine boundary to justify one) |
+| wifi-watcher | `cmd/wifi-watcher/` | Not containerized yet - needs the Linux `nmcli` Radio first (see below) |
+
+`cmd/wifi-watcher` is a separate, optional sidecar - kept out of
+`cmd/server` on purpose, since it needs host Wi-Fi privileges the API has no
+reason to have.
+
+**Everything specific to a service lives in that service's folder**: its
+`Dockerfile` (plus `Dockerfile.dockerignore` / `.dockerignore`), its
+`compose.yaml` fragment, and its config (e.g. `ui/nginx.conf.template`). The
+root `compose.yaml` only names the project and `include:`s each fragment;
+the root `Makefile` only delegates UI work to `ui/package.json` scripts.
+Removing a service means deleting its folder and its `include:` line. The
+root `Dockerfile`, `Dockerfile.fw` and `Dockerfile.ghidra` are
+reverse-engineering tooling images, not services.
 
 | Package | Job |
 |---|---|
@@ -54,7 +68,7 @@ needs host Wi-Fi privileges the dashboard itself has no reason to have.
 | `internal/collector` | Holds the SSE connection, caches latest state, persists events, retargetable at runtime (`SwitchTarget`) |
 | `internal/discovery` | Periodically sweeps the LAN for beds (`GET /api/device` on every candidate address) |
 | `internal/analysis` | Pure, offline sleep-session summarization |
-| `internal/web` | The only HTTP surface: JSON API + the embedded Angular build |
+| `internal/web` | The JSON API (`/api/*` only; the UI is served by nginx in `ui/`) |
 | `internal/wifiwatcher` | Orchestrates finding a bed still broadcasting its own AP and provisioning it onto the home network |
 | `internal/wifi` | OS-specific `wifiwatcher.Radio` implementation (`netsh_windows.go` only so far - no Linux/`nmcli` one yet, see below) |
 
@@ -112,14 +126,15 @@ access that the minimal `distroless` dashboard image has no reason to carry.
 ## Commands
 
 ```bash
-make build      # ng build, copy into internal/web/static/app, go build ./cmd/...
-make run        # go run ./cmd/server, against BED_HOST (env, default 10.0.0.1)
+make build      # go build ./cmd/... (API + wifi-watcher binaries)
+make ui         # cd ui && npm run build (the Angular app; served by nginx in its image)
+make run        # go run ./cmd/server (API only), against BED_HOST (env, default 10.0.0.1)
 make test       # go test ./... and the Angular unit tests
 make fmt        # gofmt -w cmd internal
 make vet        # go vet ./...
-make lint       # vet + gofmt check + an Angular dev build
-cd ui && npx ng serve                # UI dev server, proxies /api to localhost:8000 (proxy.conf.json)
-BED_HOST=10.0.0.1 make deploy   # rebuild the image, kill and replace the running container (see compose.yaml for the Wi-Fi-AP note)
+make lint       # vet + gofmt check + an Angular dev build (ui: npm run lint)
+cd ui && npm start                 # UI dev server on :4200, proxies /api to localhost:8000 (proxy.conf.json)
+BED_HOST=10.0.0.1 make deploy   # rebuild the ui + api images and replace their containers; dashboard on :8097 (see compose.yaml for the Wi-Fi-AP note)
 HOME_WIFI_SSID=... HOME_WIFI_PASSWORD=... make wifi-watcher   # Windows only; see cmd/wifi-watcher
 ```
 

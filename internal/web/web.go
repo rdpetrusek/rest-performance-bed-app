@@ -1,6 +1,6 @@
-// Package web is the dashboard's only HTTP surface: it serves the built
-// Angular app and the small JSON API it calls for live state, history,
-// sleep-session analysis, and bed controls. It holds no state of its own -
+// Package web is the dashboard's JSON API: live state, history,
+// sleep-session analysis, and bed controls. The Angular app is served
+// separately (ui/, behind nginx), which proxies /api here. It holds no state of its own -
 // everything it answers comes from the Live/History/Controller it was built
 // with.
 package web
@@ -68,7 +68,6 @@ type Server struct {
 	controller Controller
 	discoverer Discoverer
 	switcher   Switcher
-	static     func() (hasApp bool, serve http.Handler)
 	log        *slog.Logger
 }
 
@@ -87,12 +86,11 @@ type Options struct {
 func New(o Options) *Server {
 	return &Server{
 		addr: o.Addr, live: o.Live, history: o.History, controller: o.Controller,
-		discoverer: o.Discoverer, switcher: o.Switcher,
-		static: appHandler(), log: o.Log,
+		discoverer: o.Discoverer, switcher: o.Switcher, log: o.Log,
 	}
 }
 
-// Handler is the whole site.
+// Handler is the whole API.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/live", s.handleLive)
@@ -106,8 +104,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/control/fill", s.handleControlFill)
 	mux.HandleFunc("POST /api/control/stop", s.handleControlStop)
 	mux.HandleFunc("POST /api/control/configuration", s.handleControlConfiguration)
-	_, app := s.static()
-	mux.Handle("/", app)
 	return mux
 }
 
@@ -120,8 +116,7 @@ func (s *Server) Run(ctx context.Context) error {
 		defer cancel()
 		hs.Shutdown(sctx)
 	}()
-	hasApp, _ := s.static()
-	s.log.Info("web serving", "addr", s.addr, "app_built", hasApp)
+	s.log.Info("web serving", "addr", s.addr)
 	if err := hs.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

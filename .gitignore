@@ -7,10 +7,6 @@ tools/out/
 # Go build output
 /bin/
 
-# The Angular build, copied into internal/web/static/app by `make build`.
-# Only .gitkeep belongs in a fresh checkout - see internal/web/app.go.
-/internal/web/static/app/
-
 # Local deploy settings (bed addresses) for docker compose
 .env
 
