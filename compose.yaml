@@ -8,6 +8,10 @@
 #
 # Usage:
 #   BED_HOST=10.0.0.1 docker compose up -d --build
+# Pinned so the project (and its restbed_data volume) keeps its name even if
+# the checkout folder is renamed.
+name: rest-bed-app
+
 services:
   dashboard:
     build:
