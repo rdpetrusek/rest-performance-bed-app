@@ -32,14 +32,14 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      # Same checks as `make lint` and `make test`. internal/wifi (and so
-      # cmd/wifi-watcher) has only a Windows Radio so far, so those two are
-      # vetted for Windows and left out of the Linux vet and test runs.
+      # Same checks as `make lint` and `make test`, minus cmd/wifi-watcher and
+      # internal/wifi: they're Windows-only and not deployed, so CI leaves
+      # them out (`make test` on Windows still covers them).
       - run: test -z "$(gofmt -l cmd internal)" || { gofmt -l cmd internal; exit 1; }
-      - name: Linux packages
-        run: go list ./... | grep -v -e '/cmd/wifi-watcher$' -e '/internal/wifi$' > linux-pkgs.txt
-      - run: go vet $(cat linux-pkgs.txt) && GOOS=windows go vet ./...
-      - run: go test $(cat linux-pkgs.txt)
+      - name: CI packages
+        run: go list ./... | grep -v -e '/cmd/wifi-watcher$' -e '/internal/wifi$' > ci-pkgs.txt
+      - run: go vet $(cat ci-pkgs.txt)
+      - run: go test $(cat ci-pkgs.txt)
       - run: npm ci
         working-directory: ui
       - run: npm run test:ci
