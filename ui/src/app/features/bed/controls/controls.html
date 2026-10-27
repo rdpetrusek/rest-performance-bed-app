@@ -12,33 +12,31 @@
   @switch (mode()) {
     @case ('manual') {
       @for (zone of zones(); track $index) {
-        <div class="row">
-          <label>
-            Zone {{ $index + 1 }}:
-            <input
-              type="range"
-              [min]="store.airLimits().min"
-              [max]="store.airLimits().max"
-              [value]="zone"
-              (input)="setZone($index, $any($event.target).value)"
-            />
-          </label>
+        <div class="slider-row">
+          <label [for]="'zone-' + $index">Zone {{ $index + 1 }}</label>
+          <input
+            type="range"
+            [id]="'zone-' + $index"
+            [min]="store.airLimits().min"
+            [max]="store.airLimits().max"
+            [value]="zone"
+            (input)="setZone($index, $any($event.target).value)"
+          />
           <span>{{ zone }}</span>
         </div>
       }
     }
     @case ('pressure') {
-      <div class="row">
-        <label>
-          Firmness:
-          <input
-            type="range"
-            [min]="store.airLimits().min"
-            [max]="store.airLimits().max"
-            [value]="firmness()"
-            (input)="setFirmness($any($event.target).value)"
-          />
-        </label>
+      <div class="slider-row">
+        <label for="firmness">Firmness</label>
+        <input
+          type="range"
+          id="firmness"
+          [min]="store.airLimits().min"
+          [max]="store.airLimits().max"
+          [value]="firmness()"
+          (input)="setFirmness($any($event.target).value)"
+        />
         <span>{{ firmness() }}</span>
       </div>
     }
@@ -71,7 +69,7 @@
   }
 
   <div class="row">
-    <button type="button" class="danger" (click)="stop()">Stop</button>
+    <button type="button" class="danger stop" (click)="stop()">Stop</button>
   </div>
 
   <div class="muted" role="status" [style.color]="statusColor()">{{ status() }}</div>

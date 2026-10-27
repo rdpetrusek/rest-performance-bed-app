@@ -73,6 +73,9 @@ export class HistoryChart {
       data: { datasets },
       options: {
         parsing: false,
+        // Fills .chart's fixed height instead of a width-derived aspect ratio,
+        // which squashes the chart to a sliver on a phone.
+        maintainAspectRatio: false,
         scales: {
           x: { type: 'time', time: { unit: 'hour' } },
           y: { position: 'left' },
