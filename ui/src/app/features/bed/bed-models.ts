@@ -12,6 +12,7 @@ export interface DeviceInfo {
 export interface Preferences {
   mode?: string;
   firmness?: number;
+  manualprofile?: number[];
 }
 
 export interface BodyData {

@@ -99,6 +99,21 @@ button {
   cursor: pointer;
   font-weight: 600;
 }
+.segmented {
+  display: inline-flex;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.segmented button {
+  border-radius: 0;
+}
+.segmented button[aria-pressed='false'] {
+  background: transparent;
+  color: var(--text);
+  font-weight: 400;
+}
 button.danger {
   background: var(--danger);
   color: white;

@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, concat } from 'rxjs';
 
 import { BedApi } from './bed-api';
 import {
@@ -55,6 +55,8 @@ export class BedStore {
 
   readonly controlStatus = signal('');
   readonly controlError = signal(false);
+  /** How many control requests are still in flight; live updates shouldn't overwrite edits until it's 0. */
+  readonly controlsInFlight = signal(0);
 
   readonly devices = signal<DiscoveredDevice[]>([]);
 
@@ -141,16 +143,20 @@ export class BedStore {
     this.runControl(`mode (${mode})`, this.api.setMode(mode));
   }
 
+  /** Automatic mode at the given firmness, then fill so the bed moves to it right away. */
   applyFirmness(value: number): void {
-    this.runControl('firmness', this.api.setFirmness(value));
+    this.runControl(
+      `firmness ${value}`,
+      concat(this.api.setMode('pressure'), this.api.setFirmness(value), this.api.fill()),
+    );
   }
 
+  /** Manual mode with these zone targets, then fill - the sequence the official app sends (docs/protocol.md). */
   applyManualProfile(zones: ManualProfile): void {
-    this.runControl('manual profile', this.api.setManualProfile(zones));
-  }
-
-  fill(): void {
-    this.runControl('fill', this.api.fill());
+    this.runControl(
+      `manual profile ${zones.join('/')}`,
+      concat(this.api.setMode('manual'), this.api.setManualProfile(zones), this.api.fill()),
+    );
   }
 
   stop(): void {
@@ -162,12 +168,16 @@ export class BedStore {
   }
 
   private runControl(label: string, request: Observable<void>): void {
+    this.controlsInFlight.update((n) => n + 1);
+    // On complete, not next: a concat()ed sequence emits once per step.
     request.subscribe({
-      next: () => {
+      complete: () => {
+        this.controlsInFlight.update((n) => n - 1);
         this.controlStatus.set(`OK: ${label}`);
         this.controlError.set(false);
       },
       error: (err: HttpErrorResponse) => {
+        this.controlsInFlight.update((n) => n - 1);
         this.controlStatus.set(`Failed: ${label} - ${err.message}`);
         this.controlError.set(true);
       },

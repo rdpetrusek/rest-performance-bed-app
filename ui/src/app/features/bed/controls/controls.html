@@ -1,49 +1,56 @@
 <section class="panel">
   <h2>Controls</h2>
 
-  <div class="row">
-    <label>
-      Mode:
-      <select [value]="mode()" (change)="setMode($any($event.target).value)">
-        <option value="manual">Manual</option>
-        <option value="pressure">Automatic (pressure)</option>
-        <option value="position">Position</option>
-      </select>
-    </label>
-    <button type="button" (click)="applyMode()">Apply</button>
-  </div>
-
-  <div class="row">
-    <label>
-      Firmness:
-      <input
-        type="range"
-        [min]="store.airLimits().min"
-        [max]="store.airLimits().max"
-        [value]="firmness()"
-        (input)="setFirmness($any($event.target).value)"
-      />
-    </label>
-    <span>{{ firmness() }}</span>
-    <button type="button" (click)="applyFirmness()">Apply</button>
-  </div>
-
-  <div class="row">
-    <label id="zones-label">Manual profile (4 zones):</label>
-    @for (zone of zones(); track $index) {
-      <input
-        type="number"
-        class="zone"
-        [attr.aria-label]="'Zone ' + ($index + 1)"
-        [min]="store.airLimits().min"
-        [max]="store.airLimits().max"
-        [value]="zone"
-        (change)="setZone($any($index), $any($event.target))"
-      />
+  <div class="segmented" role="group" aria-label="Mode">
+    @for (m of modes; track m.value) {
+      <button type="button" [attr.aria-pressed]="mode() === m.value" (click)="selectMode(m.value)">
+        {{ m.label }}
+      </button>
     }
-    <button type="button" (click)="applyManualProfile()">Apply</button>
   </div>
-  <div class="muted">Allowed range: {{ store.airLimits().min }}–{{ store.airLimits().max }} (the bed's own limits)</div>
+
+  @switch (mode()) {
+    @case ('manual') {
+      <div class="row" role="group" aria-labelledby="zones-label">
+        <span id="zones-label">Zone pressures:</span>
+        @for (zone of zones(); track $index) {
+          <input
+            type="number"
+            class="zone"
+            [attr.aria-label]="'Zone ' + ($index + 1)"
+            [min]="store.airLimits().min"
+            [max]="store.airLimits().max"
+            [value]="zone"
+            (input)="setZone($index, $any($event.target).value)"
+          />
+        }
+      </div>
+    }
+    @case ('pressure') {
+      <div class="row">
+        <label>
+          Firmness:
+          <input
+            type="range"
+            [min]="store.airLimits().min"
+            [max]="store.airLimits().max"
+            [value]="firmness()"
+            (input)="setFirmness($any($event.target).value)"
+          />
+        </label>
+        <span>{{ firmness() }}</span>
+      </div>
+    }
+    @case ('position') {
+      <div class="row muted">The bed sets each zone from your sleeping position. No settings for this mode yet.</div>
+    }
+  }
+  @if (mode() !== 'position') {
+    <div class="muted">
+      Allowed range: {{ store.airLimits().min }}–{{ store.airLimits().max }} (the bed's own limits). Changes are sent
+      and the bed fills a moment after you stop adjusting.
+    </div>
+  }
 
   @if (padConfig(); as cfg) {
     <div class="row">
@@ -63,9 +70,8 @@
   }
 
   <div class="row">
-    <button type="button" (click)="fill()">Fill</button>
     <button type="button" class="danger" (click)="stop()">Stop</button>
   </div>
 
-  <div class="muted" [style.color]="statusColor()">{{ store.controlStatus() }}</div>
+  <div class="muted" role="status" [style.color]="statusColor()">{{ status() }}</div>
 </section>
