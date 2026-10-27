@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 
 import { BedStore } from '../bed-store';
-import { ManualProfile, PAD_BYPASS } from '../bed-models';
+import { ManualProfile } from '../bed-models';
 
 type Mode = 'manual' | 'pressure' | 'position';
 
@@ -41,9 +41,7 @@ export class Controls {
   private applyTimer: ReturnType<typeof setTimeout> | undefined;
 
   readonly statusColor = computed(() => (this.store.controlError() ? '#d9534f' : ''));
-  readonly status = computed(() =>
-    this.pending() ? 'Waiting for you to finish, then filling…' : this.store.controlStatus(),
-  );
+  readonly status = computed(() => (this.pending() ? 'Applying…' : this.store.controlStatus()));
 
   constructor() {
     // Mirrors the bed's own preferences whenever a live update arrives, so the
@@ -65,19 +63,6 @@ export class Controls {
     this.cancelPending();
     this.mode.set(mode);
     this.store.applyMode(mode);
-  }
-
-  /** The bed's current configuration and its pad-requirement twin, if it's one the firmware knows. */
-  readonly padConfig = computed(() => {
-    const current = this.store.live().device?.configuration;
-    const other = current ? PAD_BYPASS[current] : undefined;
-    if (!current || !other) return null;
-    return { current, other, bypassed: current.includes('z00') };
-  });
-
-  togglePadBypass(): void {
-    const cfg = this.padConfig();
-    if (cfg) this.store.setConfiguration(cfg.other);
   }
 
   setFirmness(value: string): void {

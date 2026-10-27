@@ -1,29 +1,34 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, signal, viewChild } from '@angular/core';
+import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
-import { BedStore } from './features/bed/bed-store';
-import { Controls } from './features/bed/controls/controls';
-import { DeviceSelector } from './features/bed/device-selector/device-selector';
-import { HistoryChart } from './features/bed/history-chart/history-chart';
-import { LiveCards } from './features/bed/live-cards/live-cards';
-import { SessionSummary } from './features/bed/session-summary/session-summary';
+import { PadAlert } from './features/bed/pad-alert/pad-alert';
 
 @Component({
   selector: 'app-root',
-  imports: [DeviceSelector, LiveCards, SessionSummary, HistoryChart, Controls],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, PadAlert],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './app.html',
+  host: {
+    '(document:keydown.escape)': 'menuOpen.set(false)',
+    '(document:click)': 'closeOnOutsideClick($event)',
+  },
 })
 export class App {
-  private readonly store = inject(BedStore);
+  readonly menuOpen = signal(false);
+  private readonly header = viewChild.required<ElementRef<HTMLElement>>('header');
 
-  readonly deviceName = computed(() => {
-    if (!this.store.liveReachable()) return '(unreachable)';
-    return this.store.live().device?.name || '(connecting...)';
-  });
+  readonly links = [
+    { path: '/', label: 'Controls' },
+    { path: '/status', label: 'Status' },
+    { path: '/history', label: 'History' },
+    { path: '/settings', label: 'Settings' },
+  ] as const;
 
-  readonly deviceMeta = computed(() => {
-    const device = this.store.live().device;
-    if (!device?.model) return '';
-    return `model ${device.model} - ${device.configuration ?? ''} - ${device.address ?? ''}`;
-  });
+  toggleMenu(): void {
+    this.menuOpen.update((open) => !open);
+  }
+
+  closeOnOutsideClick(event: MouseEvent): void {
+    if (!this.header().nativeElement.contains(event.target as Node)) this.menuOpen.set(false);
+  }
 }

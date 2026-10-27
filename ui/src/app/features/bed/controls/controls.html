@@ -41,31 +41,8 @@
       </div>
     }
     @case ('position') {
-      <div class="row muted">The bed sets each zone from your sleeping position. No settings for this mode yet.</div>
+      <div class="row muted">Adjusts to your sleep position.</div>
     }
-  }
-  @if (mode() !== 'position') {
-    <div class="muted">
-      Allowed range: {{ store.airLimits().min }}–{{ store.airLimits().max }} (the bed's own limits). Changes are sent
-      and the bed fills a moment after you stop adjusting.
-    </div>
-  }
-
-  @if (padConfig(); as cfg) {
-    <div class="row">
-      <span>
-        Sensor pad mode:
-        <strong>{{ cfg.bypassed ? 'Bypassed (no pad needed)' : 'Pad required' }}</strong>
-        <span class="muted">({{ cfg.current }})</span>
-      </span>
-      <button type="button" (click)="togglePadBypass()">
-        {{ cfg.bypassed ? 'Use the pad again' : 'Bypass the pad' }} ({{ cfg.other }})
-      </button>
-    </div>
-    <div class="muted">
-      Bypassing keeps pump and valve control working when the pad is offline, but turns off presence, heart rate,
-      breathing and the automatic mode's body map.
-    </div>
   }
 
   <div class="row">

@@ -10,6 +10,7 @@ import {
   HistoryRow,
   LiveSnapshot,
   ManualProfile,
+  PAD_BYPASS,
   Preferences,
   SessionSummary,
 } from './bed-models';
@@ -45,6 +46,20 @@ export class BedStore {
     if (!surface) return 'unknown';
     return surface.rows && surface.columns ? 'connected' : 'disconnected';
   });
+
+  /** The bed's current configuration and its pad-requirement twin, if it's one the firmware knows. */
+  readonly padConfig = computed(() => {
+    const current = this.live().device?.configuration;
+    const other = current ? PAD_BYPASS[current] : undefined;
+    if (!current || !other) return null;
+    return { current, other, bypassed: current.includes('z00') };
+  });
+
+  /** Flips the configuration to its pad-requirement twin (see padConfig). */
+  togglePadBypass(): void {
+    const cfg = this.padConfig();
+    if (cfg) this.setConfiguration(cfg.other);
+  }
 
   readonly session = signal<SessionSummary | null>(null);
   readonly sessionError = signal<string | null>(null);
