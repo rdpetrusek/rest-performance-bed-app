@@ -1,5 +1,5 @@
 <section class="cards">
-  <div class="card" [class.warning]="padWarning()" role="status">
+  <div class="card wide" [class.warning]="padWarning()" role="status">
     <h3>Sensor pad</h3>
     <div class="big">{{ padLabel() }}</div>
     @if (padNote()) {
@@ -34,7 +34,7 @@
     <h3>Air</h3>
     <div class="big">{{ filling() }}</div>
   </div>
-  <div class="card">
+  <div class="card pair">
     <h3>Pressures</h3>
     <div class="big">{{ pressures() }}</div>
   </div>
