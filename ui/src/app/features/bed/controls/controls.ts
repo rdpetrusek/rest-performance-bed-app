@@ -86,17 +86,9 @@ export class Controls {
   }
 
   setZone(index: number, value: string): void {
-    // Clamped only when sent, so typing "3" on the way to "35" isn't bumped
-    // up to the minimum mid-keystroke. An empty field just restarts the wait.
-    const n = Number(value);
-    if (value !== '' && Number.isFinite(n)) {
-      this.zones.update((z) => toProfile(z.map((v, i) => (i === index ? Math.round(n) : v))));
-    }
-    this.schedule(() => {
-      const clamped = toProfile(this.zones().map((v) => this.clamp(v)));
-      this.zones.set(clamped);
-      this.store.applyManualProfile(clamped);
-    });
+    const n = this.clamp(Number(value));
+    this.zones.update((z) => toProfile(z.map((v, i) => (i === index ? n : v))));
+    this.schedule(() => this.store.applyManualProfile(this.zones()));
   }
 
   stop(): void {

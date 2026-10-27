@@ -118,16 +118,12 @@ button.danger {
   background: var(--danger);
   color: white;
 }
-select,
-input[type='number'] {
+select {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 8px;
-}
-input.zone {
-  width: 4em;
 }
 canvas {
   max-width: 100%;

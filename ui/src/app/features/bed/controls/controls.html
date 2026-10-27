@@ -11,20 +11,21 @@
 
   @switch (mode()) {
     @case ('manual') {
-      <div class="row" role="group" aria-labelledby="zones-label">
-        <span id="zones-label">Zone pressures:</span>
-        @for (zone of zones(); track $index) {
-          <input
-            type="number"
-            class="zone"
-            [attr.aria-label]="'Zone ' + ($index + 1)"
-            [min]="store.airLimits().min"
-            [max]="store.airLimits().max"
-            [value]="zone"
-            (input)="setZone($index, $any($event.target).value)"
-          />
-        }
-      </div>
+      @for (zone of zones(); track $index) {
+        <div class="row">
+          <label>
+            Zone {{ $index + 1 }}:
+            <input
+              type="range"
+              [min]="store.airLimits().min"
+              [max]="store.airLimits().max"
+              [value]="zone"
+              (input)="setZone($index, $any($event.target).value)"
+            />
+          </label>
+          <span>{{ zone }}</span>
+        </div>
+      }
     }
     @case ('pressure') {
       <div class="row">
