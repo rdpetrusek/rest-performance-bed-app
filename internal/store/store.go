@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -25,6 +26,10 @@ CREATE TABLE IF NOT EXISTS events (
 	data   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_by_event_ts ON events(event, ts_ms);
+CREATE TABLE IF NOT EXISTS settings (
+	key    TEXT PRIMARY KEY,
+	value  TEXT NOT NULL
+);
 `
 
 // Store is the event log.
@@ -98,6 +103,28 @@ func migrateLegacy(db *sql.DB) error {
 
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
+
+// pickedBedKey is the settings key holding the id of the bed the user picked.
+const pickedBedKey = "picked_bed_id"
+
+// PickedBed returns the id of the bed the user last picked, or "" if none.
+// It is the bed's id (its MAC), never an address: addresses change.
+func (s *Store) PickedBed(ctx context.Context) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, pickedBedKey).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
+// SetPickedBed remembers id as the picked bed, across restarts.
+func (s *Store) SetPickedBed(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		pickedBedKey, id)
+	return err
+}
 
 // Row is one recorded event.
 type Row struct {

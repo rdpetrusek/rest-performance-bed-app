@@ -3,6 +3,8 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"rest-bed-app/internal/bed"
 	"rest-bed-app/internal/discovery"
 	"rest-bed-app/internal/store"
 )
@@ -65,9 +68,15 @@ type fakeDiscoverer struct{ devices []discovery.Device }
 
 func (f *fakeDiscoverer) Snapshot() []discovery.Device { return f.devices }
 
-type fakeSwitcher struct{ switchedTo string }
+type fakeSwitcher struct {
+	pickedID string
+	err      error
+}
 
-func (f *fakeSwitcher) SwitchTarget(host string) { f.switchedTo = host }
+func (f *fakeSwitcher) Pick(_ context.Context, id string) error {
+	f.pickedID = id
+	return f.err
+}
 
 // newTestServer fills in a discard logger and empty fakes for whatever opts
 // leaves out, so each test only sets the collaborators it actually exercises.
@@ -250,7 +259,7 @@ func TestHandleControlModeAppliesBody(t *testing.T) {
 
 func TestHandleDevices(t *testing.T) {
 	disc := &fakeDiscoverer{devices: []discovery.Device{
-		{ID: "abc123", Name: "ReST-abc123", Address: "10.0.0.1", Class: "ReST Bed", Model: "mac"},
+		{ID: "abc123", Name: "ReST-abc123", Address: "192.0.2.1", Class: "ReST Bed", Model: "mac"},
 	}}
 	srv := newTestServer(t, Options{Discoverer: disc})
 
@@ -264,37 +273,65 @@ func TestHandleDevices(t *testing.T) {
 	}
 	var got []discovery.Device
 	json.NewDecoder(resp.Body).Decode(&got)
-	if len(got) != 1 || got[0].Address != "10.0.0.1" {
+	if len(got) != 1 || got[0].Address != "192.0.2.1" {
 		t.Errorf("got %+v", got)
 	}
 }
 
 func TestHandleSelectDevice(t *testing.T) {
-	sw := &fakeSwitcher{}
-	srv := newTestServer(t, Options{Switcher: sw})
+	tests := []struct {
+		name     string
+		body     string
+		pickErr  error
+		wantCode int
+		wantID   string
+	}{
+		{"picks by id", `{"id":"d8c0a6ee0d07"}`, nil, http.StatusOK, "d8c0a6ee0d07"},
+		{"empty id rejected", `{"id":""}`, nil, http.StatusBadRequest, ""},
+		{"an address is not an id", `{"address":"192.0.2.5"}`, nil, http.StatusBadRequest, ""},
+		{"id no scan has seen", `{"id":"ffff"}`, fmt.Errorf("%w: %q", discovery.ErrUnknownBed, "ffff"), http.StatusNotFound, "ffff"},
+		{"saving the pick failed", `{"id":"abc"}`, errors.New("disk full"), http.StatusInternalServerError, "abc"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sw := &fakeSwitcher{err: tt.pickErr}
+			srv := newTestServer(t, Options{Switcher: sw})
 
-	resp, err := http.Post(srv.URL+"/api/devices/select", "application/json", strings.NewReader(`{"address":"10.0.0.5"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
-	}
-	if sw.switchedTo != "10.0.0.5" {
-		t.Errorf("switchedTo = %q, want 10.0.0.5", sw.switchedTo)
+			resp, err := http.Post(srv.URL+"/api/devices/select", "application/json", strings.NewReader(tt.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tt.wantCode {
+				t.Errorf("status = %d, want %d", resp.StatusCode, tt.wantCode)
+			}
+			if sw.pickedID != tt.wantID {
+				t.Errorf("pickedID = %q, want %q", sw.pickedID, tt.wantID)
+			}
+		})
 	}
 }
 
-func TestHandleSelectDeviceRejectsEmptyAddress(t *testing.T) {
-	srv := newTestServer(t, Options{})
-
-	resp, err := http.Post(srv.URL+"/api/devices/select", "application/json", strings.NewReader(`{"address":""}`))
-	if err != nil {
-		t.Fatal(err)
+func TestControlErrorStatus(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode int
+	}{
+		{"no bed connected is 503", fmt.Errorf("%w: no bed picked", bed.ErrNoTarget), http.StatusServiceUnavailable},
+		{"any other failure is 502", errors.New("connection reset"), http.StatusBadGateway},
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", resp.StatusCode)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newTestServer(t, Options{Controller: &fakeController{err: tt.err}})
+			resp, err := http.Post(srv.URL+"/api/control/stop", "application/json", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tt.wantCode {
+				t.Errorf("status = %d, want %d", resp.StatusCode, tt.wantCode)
+			}
+		})
 	}
 }

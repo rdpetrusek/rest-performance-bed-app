@@ -52,11 +52,12 @@ type Collector struct {
 	mu        sync.RWMutex
 	latest    map[string]json.RawMessage
 	cancelCur context.CancelFunc // cancels the in-flight StreamSSE call, nil if none
+	wake      chan struct{}      // signalled by SwitchTarget; Run waits on it when idle
 }
 
 // New returns a collector for bedClient, persisting events to s.
 func New(bedClient *bed.Client, s *store.Store, log *slog.Logger) *Collector {
-	return &Collector{bed: bedClient, store: s, log: log, latest: map[string]json.RawMessage{}}
+	return &Collector{bed: bedClient, store: s, log: log, latest: map[string]json.RawMessage{}, wake: make(chan struct{}, 1)}
 }
 
 // Snapshot returns the latest payload seen for every event name.
@@ -77,6 +78,16 @@ func (c *Collector) Run(ctx context.Context) error {
 	go c.poll(ctx)
 	backoff := minBackoff
 	for {
+		if c.bed.Host() == "" {
+			// No bed picked or found yet: dial nothing, just wait to be pointed at one.
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-c.wake:
+			}
+			backoff = minBackoff
+			continue
+		}
 		connCtx, cancel := context.WithCancel(ctx)
 		c.mu.Lock()
 		c.cancelCur = cancel
@@ -99,15 +110,19 @@ func (c *Collector) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-c.wake:
+			// Retargeted while waiting: connect to the new address now.
+			backoff = minBackoff
 		case <-time.After(backoff):
+			backoff = min(backoff*2, maxBackoff)
 		}
-		backoff = min(backoff*2, maxBackoff)
 	}
 }
 
 // SwitchTarget retargets the collector at a different bed: it points the
 // client at host, drops any live state from the old bed, and interrupts the
-// current connection so Run reconnects against host right away.
+// current connection so Run reconnects against host right away. An empty host
+// disconnects: Run then idles until the next SwitchTarget.
 func (c *Collector) SwitchTarget(host string) {
 	c.bed.SetHost(host)
 	c.mu.Lock()
@@ -116,6 +131,10 @@ func (c *Collector) SwitchTarget(host string) {
 	c.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	select {
+	case c.wake <- struct{}{}:
+	default:
 	}
 }
 

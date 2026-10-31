@@ -10,6 +10,7 @@ package bed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,6 +20,18 @@ import (
 
 // DefaultTimeout bounds every request to the bed.
 const DefaultTimeout = 8 * time.Second
+
+// ErrNoTarget is what every call returns while the client has no bed to talk
+// to (nothing picked yet, or the picked bed hasn't been found on the network).
+var ErrNoTarget = errors.New("no bed connected")
+
+// StatusError is a bed answering with an HTTP error status: the request was
+// delivered and the bed refused it, so resending it elsewhere or again won't help.
+type StatusError struct {
+	Method, Path, Status string
+}
+
+func (e *StatusError) Error() string { return e.Method + " " + e.Path + ": " + e.Status }
 
 // Client talks to one bed over its local HTTP API (no auth, per the firmware).
 // The target host can change at runtime (SetHost), when the user picks a
@@ -30,7 +43,8 @@ type Client struct {
 	host string
 }
 
-// New returns a client for the bed at host (e.g. "10.0.0.1").
+// New returns a client for the bed at host (a bare address, optionally with a
+// port). An empty host means no target yet: every call fails with ErrNoTarget.
 func New(host string) *Client {
 	return &Client{host: host, hc: &http.Client{Timeout: DefaultTimeout}}
 }
@@ -42,17 +56,27 @@ func (c *Client) Host() string {
 	return c.host
 }
 
-// SetHost retargets the client at a different bed.
+// SetHost retargets the client at a different bed ("" clears the target).
 func (c *Client) SetHost(host string) {
 	c.mu.Lock()
 	c.host = host
 	c.mu.Unlock()
 }
 
-func (c *Client) base() string { return "http://" + c.Host() + "/api" }
+func (c *Client) base() (string, error) {
+	host := c.Host()
+	if host == "" {
+		return "", ErrNoTarget
+	}
+	return "http://" + host + "/api", nil
+}
 
 func (c *Client) get(ctx context.Context, path string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base()+path, nil)
+	base, err := c.base()
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
 	if err != nil {
 		return err
 	}
@@ -62,13 +86,17 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("GET %s: %s", path, resp.Status)
+		return &StatusError{http.MethodGet, path, resp.Status}
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
 func (c *Client) put(ctx context.Context, path, body string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.base()+path, strings.NewReader(body))
+	base, err := c.base()
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, base+path, strings.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -78,7 +106,7 @@ func (c *Client) put(ctx context.Context, path, body string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("PUT %s: %s", path, resp.Status)
+		return &StatusError{http.MethodPut, path, resp.Status}
 	}
 	return nil
 }
@@ -91,6 +119,22 @@ func (c *Client) Device(ctx context.Context) (json.RawMessage, error) {
 	var out json.RawMessage
 	err := c.get(ctx, "/device", &out)
 	return out, err
+}
+
+// ID returns the id the bed at the current target reports (its MAC, stable
+// across address changes). The caller compares it with the bed it meant to talk
+// to before sending anything: addresses get reassigned.
+func (c *Client) ID(ctx context.Context) (string, error) {
+	var d struct {
+		ID string `json:"id"`
+	}
+	if err := c.get(ctx, "/device", &d); err != nil {
+		return "", err
+	}
+	if d.ID == "" {
+		return "", errors.New("device reported no id")
+	}
+	return d.ID, nil
 }
 
 // Values returns the bed's /api/values/<key> payload, raw.

@@ -17,3 +17,6 @@ tools/out/
 
 # The live SQLite event log (personal sleep data)
 /data/
+
+# Claude Code worktrees
+/.claude/worktrees/

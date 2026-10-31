@@ -3,6 +3,8 @@
 // the bed's full payloads.
 
 export interface DeviceInfo {
+  /** The bed's own id (its MAC): stable across address changes, unlike `address`. */
+  id?: string;
   name?: string;
   model?: string;
   configuration?: string;

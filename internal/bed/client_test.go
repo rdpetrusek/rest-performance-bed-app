@@ -2,6 +2,7 @@ package bed
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -92,5 +93,57 @@ func TestSetHostRetargetsSubsequentCalls(t *testing.T) {
 
 	if len(*logA) != 1 || len(*logB) != 1 {
 		t.Fatalf("logA=%d logB=%d, want 1 and 1", len(*logA), len(*logB))
+	}
+}
+
+func TestNoTargetFailsWithoutDialling(t *testing.T) {
+	c := New("")
+	ctx := context.Background()
+	calls := map[string]func() error{
+		"SetFirmness": func() error { return c.SetFirmness(ctx, 30) },
+		"Stop":        func() error { return c.Stop(ctx) },
+		"ID":          func() error { _, err := c.ID(ctx); return err },
+		"Air":         func() error { _, err := c.Air(ctx); return err },
+		"StreamSSE":   func() error { return c.StreamSSE(ctx, func() {}, func(Event) {}) },
+	}
+	for name, call := range calls {
+		if err := call(); !errors.Is(err, ErrNoTarget) {
+			t.Errorf("%s with no target = %v, want ErrNoTarget", name, err)
+		}
+	}
+}
+
+func TestIDAndStatusError(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   int
+		body     string
+		wantID   string
+		wantErr  bool
+		wantHTTP bool
+	}{
+		{"bed reports its id", 200, `{"class":"ReST Bed","id":"d8c0a6ee0d07"}`, "d8c0a6ee0d07", false, false},
+		{"no id in the payload", 200, `{"class":"ReST Bed"}`, "", true, false},
+		{"HTTP error is a StatusError", 500, `oops`, "", true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				io.WriteString(w, tt.body)
+			}))
+			defer srv.Close()
+			got, err := New(hostOf(srv)).ID(context.Background())
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			var se *StatusError
+			if errors.As(err, &se) != tt.wantHTTP {
+				t.Errorf("StatusError = %v, want %v (err %v)", errors.As(err, &se), tt.wantHTTP, err)
+			}
+			if got != tt.wantID {
+				t.Errorf("id = %q, want %q", got, tt.wantID)
+			}
+		})
 	}
 }

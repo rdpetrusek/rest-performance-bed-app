@@ -20,7 +20,11 @@ type Event struct {
 // raises, in order, until ctx is done or the connection drops. It returns the
 // error that ended the stream (nil only if ctx was done).
 func (c *Client) StreamSSE(ctx context.Context, onConnect func(), onEvent func(Event)) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base()+"/sse", nil)
+	base, err := c.base()
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/sse", nil)
 	if err != nil {
 		return err
 	}

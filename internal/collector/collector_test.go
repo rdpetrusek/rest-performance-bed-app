@@ -87,3 +87,36 @@ func TestHandleIgnoresTimeEvent(t *testing.T) {
 		t.Error("time event should not be cached")
 	}
 }
+
+func TestRunWithNoTargetDialsNothingUntilSwitched(t *testing.T) {
+	a := sseServer("A")
+	defer a.Close()
+
+	s, err := store.Open(filepath.Join(t.TempDir(), "restbed.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	c := New(bed.New(""), s, slog.New(slog.DiscardHandler))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx) }()
+
+	time.Sleep(100 * time.Millisecond)
+	if got := len(c.Snapshot()); got != 0 {
+		t.Fatalf("snapshot has %d events with no bed connected, want 0", got)
+	}
+
+	c.SwitchTarget(hostOf(a))
+	waitFor(t, func() bool { return string(c.Snapshot()["device"]) == `{"from":"A"}` })
+
+	c.SwitchTarget("") // the bed was lost: disconnect and clear
+	waitFor(t, func() bool { return len(c.Snapshot()) == 0 })
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("Run() = %v, want nil after ctx cancel", err)
+	}
+}

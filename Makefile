@@ -20,14 +20,15 @@ ui:
 build:
 	go build -o $(BIN)/ ./cmd/...
 
-# Runs the API directly against BED_HOST (env, default 10.0.0.1). It serves
+# Runs the API directly; it scans this host's own networks (plus SCAN_SUBNETS) for
+# the bed. It serves
 # only /api; for the UI run `cd ui && npm start` alongside it (its
 # proxy.conf.json sends /api here).
 run:
 	go run ./cmd/server
 
 # Rebuilds every service's image (see compose.yaml) and replaces the running
-# containers, against BED_HOST (env, default 10.0.0.1). The named volume
+# containers. The named volume
 # (restbed_data) is untouched, so the SQLite history survives the redeploy.
 deploy:
 	docker compose up -d --build --force-recreate --remove-orphans
