@@ -1,11 +1,13 @@
 <label class="muted">
   Bed:
-  <select [value]="currentAddress()" (change)="onSelect($any($event.target).value)">
+  <select [value]="currentId()" (change)="onSelect($any($event.target).value)">
     @if (options().length === 0) {
       <option value="">Scanning for beds...</option>
+    } @else if (!currentId()) {
+      <option value="">Pick a bed...</option>
     }
-    @for (d of options(); track d.address) {
-      <option [value]="d.address">{{ d.name }} ({{ d.address }})</option>
+    @for (d of options(); track d.id) {
+      <option [value]="d.id">{{ d.name }} ({{ d.address }})</option>
     }
   </select>
 </label>

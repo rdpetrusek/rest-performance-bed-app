@@ -11,25 +11,27 @@ import { DiscoveredDevice } from '../bed-models';
 export class DeviceSelector {
   protected readonly store = inject(BedStore);
 
-  readonly currentAddress = computed(() => this.store.live().device?.address ?? '');
+  // Beds are compared by id: the address is only where the bed is right now
+  // and the server follows it when it moves.
+  readonly currentId = computed(() => this.store.live().device?.id ?? '');
 
   // The scan runs every ~15s on the server, so the bed we're actually
-  // connected to right now may not have shown up in it yet (just switched,
-  // or started against a fixed BED_HOST never discovered). Show it anyway so
-  // the dropdown always reflects reality.
+  // connected to right now may not have shown up in it yet (just switched).
+  // Show it anyway so the dropdown always reflects reality.
   readonly options = computed<DiscoveredDevice[]>(() => {
     const devices = this.store.devices();
-    const current = this.currentAddress();
-    if (!current || devices.some((d) => d.address === current)) {
+    const current = this.currentId();
+    if (!current || devices.some((d) => d.id === current)) {
       return devices;
     }
-    const name = this.store.live().device?.name || current;
-    return [{ id: current, name, address: current, class: '' }, ...devices];
+    const device = this.store.live().device;
+    const address = device?.address ?? '';
+    return [{ id: current, name: device?.name || current, address, class: '' }, ...devices];
   });
 
-  onSelect(address: string): void {
-    if (address && address !== this.currentAddress()) {
-      this.store.selectDevice(address);
+  onSelect(id: string): void {
+    if (id && id !== this.currentId()) {
+      this.store.selectDevice(id);
     }
   }
 }

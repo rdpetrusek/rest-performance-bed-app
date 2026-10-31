@@ -132,3 +132,40 @@ func TestQueryRespectsLimit(t *testing.T) {
 		t.Errorf("len(got) = %d, want 2", len(got))
 	}
 }
+
+func TestPickedBedSurvivesReopen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "restbed.db")
+
+	steps := []struct {
+		name string
+		set  string // "" means only read
+		want string
+	}{
+		{"nothing picked yet", "", ""},
+		{"first pick", "d8c0a6ee0d07", "d8c0a6ee0d07"},
+		{"pick replaced", "aabbccddeeff", "aabbccddeeff"},
+	}
+	for _, st := range steps {
+		s, err := Open(path) // reopened each step: the pick must be durable
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.PickedBed(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.set != "" {
+			if err := s.SetPickedBed(ctx, st.set); err != nil {
+				t.Fatal(err)
+			}
+			if got, err = s.PickedBed(ctx); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got != st.want {
+			t.Errorf("%s: PickedBed = %q, want %q", st.name, got, st.want)
+		}
+		s.Close()
+	}
+}

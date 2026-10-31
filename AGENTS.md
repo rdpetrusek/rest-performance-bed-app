@@ -65,8 +65,9 @@ reverse-engineering tooling images, not services.
 |---|---|
 | `internal/bed` | HTTP+SSE client for the bed's own local API (no auth) |
 | `internal/store` | SQLite event log; the only package that opens the DB |
-| `internal/collector` | Holds the SSE connection, caches latest state, persists events, retargetable at runtime (`SwitchTarget`) |
-| `internal/discovery` | Periodically sweeps the LAN for beds (`GET /api/device` on every candidate address) |
+| `internal/collector` | Holds the SSE connection, caches latest state, persists events, retargetable at runtime (`SwitchTarget`); idle while there is no target |
+| `internal/connection` | Which bed is picked (by id, saved in the store) and where it lives now: verifies the address, follows the bed when it moves, and runs commands with an identity check and one rescan-and-retry |
+| `internal/discovery` | Periodically sweeps the LAN for beds (`GET /api/device` on every candidate address); sweeps never overlap and concurrent callers share one |
 | `internal/analysis` | Pure, offline sleep-session summarization |
 | `internal/web` | The JSON API (`/api/*` only; the UI is served by nginx in `ui/`) |
 | `internal/wifiwatcher` | Orchestrates finding a bed still broadcasting its own AP and provisioning it onto the home network |
@@ -74,7 +75,9 @@ reverse-engineering tooling images, not services.
 
 - `internal/web`'s `Live`/`History`/`Controller`/`Discoverer`/`Switcher`
   interfaces are declared in `web` (the consumer), implemented by
-  `collector`, `store`, `bed.Client`, and `discovery.Scanner` respectively -
+  `collector`, `store`, `connection.Manager` (which sends commands through
+  `bed.Client` after checking the bed's id, and handles picks), and
+  `discovery.Scanner` respectively -
   the one real seam this app needs, there for testability (fakes in
   `web_test.go`), not for swappability that will never happen.
   `internal/wifiwatcher`'s `Radio`/`Provisioner` interfaces follow the same
@@ -128,18 +131,22 @@ access that the minimal `distroless` dashboard image has no reason to carry.
 ```bash
 make build      # go build ./cmd/... (API + wifi-watcher binaries)
 make ui         # cd ui && npm run build (the Angular app; served by nginx in its image)
-make run        # go run ./cmd/server (API only), against BED_HOST (env, default 10.0.0.1)
+make run        # go run ./cmd/server (API only); finds the bed by scanning, never by a configured address
 make test       # go test ./... and the Angular unit tests
 make fmt        # gofmt -w cmd internal
 make vet        # go vet ./...
 make lint       # vet + gofmt check + an Angular dev build (ui: npm run lint)
 cd ui && npm start                 # UI dev server on :4200, proxies /api to localhost:8000 (proxy.conf.json)
-BED_HOST=10.0.0.1 make deploy   # rebuild the ui + api images and replace their containers; dashboard on :8097 (see compose.yaml for the Wi-Fi-AP note)
+make deploy       # rebuild the ui + api images and replace their containers; dashboard on :8097 (see compose.yaml for the Wi-Fi-AP note)
 HOME_WIFI_SSID=... HOME_WIFI_PASSWORD=... make wifi-watcher   # Windows only; see cmd/wifi-watcher
 ```
 
-`DB_PATH` (default `/data/restbed.db`) and `ADDR` (default `:8000`) are the
-other two environment variables `cmd/server` reads.
+`SCAN_SUBNETS` (comma-separated /24 prefixes such as `192.168.1`) names LANs to
+sweep that this process has no interface on (a container on Docker Desktop or a
+cluster pod); the host's own interfaces are always swept. `DB_PATH` (default
+`/data/restbed.db`) and `ADDR` (default `:8000`) are the other environment
+variables `cmd/server` reads. There is no bed address setting: the bed is
+found by scanning on every start, and the user's pick is stored as the bed's id.
 
 Any `go` invocation (build, run, test, vet, fmt, ...) goes through a Makefile
 target rather than being typed raw - add a target if the one you need isn't

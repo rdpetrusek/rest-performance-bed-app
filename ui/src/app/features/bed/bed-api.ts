@@ -63,7 +63,8 @@ export class BedApi {
     return this.http.get<DiscoveredDevice[]>('/api/devices');
   }
 
-  selectDevice(address: string): Observable<void> {
-    return this.http.post<void>('/api/devices/select', { address });
+  /** Picks a bed by its id; the server works out (and keeps following) its address. */
+  selectDevice(id: string): Observable<void> {
+    return this.http.post<void>('/api/devices/select', { id });
   }
 }

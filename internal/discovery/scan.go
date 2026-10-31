@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,13 +15,16 @@ import (
 	"time"
 )
 
-// seedSubnet is the bed's own default Wi-Fi AP subnet (direct mode) - always
-// probed even when this host's own interfaces don't happen to be on it yet.
-const seedSubnet = "10.0.0"
-
 // maxConcurrentProbes bounds how many /api/device requests are in flight at
-// once, so a sweep doesn't open 254+ sockets in a single burst.
-const maxConcurrentProbes = 64
+// once, so a sweep doesn't open 254+ sockets in a single burst. A /24 of
+// silent hosts then costs about two probe timeouts per attempt.
+const maxConcurrentProbes = 128
+
+// probeAttempts is how many times a silent address is tried before it is
+// written off. A bed that answers in half a second has still been seen to miss
+// a single probe, so a timeout earns one more try. Refusals and other fast
+// failures are not retried.
+const probeAttempts = 2
 
 // scanOnce probes every address in every candidate /24 and returns the beds
 // that answered, sorted by address.
@@ -70,28 +74,39 @@ func scanOnce(ctx context.Context, timeout time.Duration, extra []string) ([]Dev
 var probePort = 80
 
 // probe GETs ip's /api/device and reports whether it's a ReST Bed (or the
-// "SmartBed" class some firmware builds use).
+// "SmartBed" class some firmware builds use), retrying once if it just timed out.
 func probe(ctx context.Context, ip string, timeout time.Duration) (Device, bool) {
+	for range probeAttempts {
+		d, ok, timedOut := probeOnce(ctx, ip, timeout)
+		if ok || !timedOut || ctx.Err() != nil {
+			return d, ok
+		}
+	}
+	return Device{}, false
+}
+
+func probeOnce(ctx context.Context, ip string, timeout time.Duration) (d Device, ok, timedOut bool) {
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	url := fmt.Sprintf("http://%s:%d/api/device", ip, probePort)
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
 	if err != nil {
-		return Device{}, false
+		return Device{}, false, false
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return Device{}, false
+		return Device{}, false, errors.Is(err, context.DeadlineExceeded)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return Device{}, false
+		return Device{}, false, false
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return Device{}, false
+		return Device{}, false, errors.Is(err, context.DeadlineExceeded)
 	}
-	return parseDeviceResponse(body, ip)
+	d, ok = parseDeviceResponse(body, ip)
+	return d, ok, false
 }
 
 // parseDeviceResponse decodes an /api/device response and reports whether it
@@ -112,11 +127,12 @@ func parseDeviceResponse(body []byte, ip string) (Device, bool) {
 }
 
 // candidateSubnets returns the /24 prefixes ("a.b.c") worth probing: every
-// IPv4 address this host currently has (covers both joining the bed's own AP
-// directly and a home LAN with one or more beds in "indirect" mode), plus the
-// bed's own default AP subnet as a seed even if not currently joined to it,
-// plus extra - the subnets this host can reach but has no interface on, e.g.
-// the home LAN as seen from inside a Docker container on Windows.
+// IPv4 address this host currently has (covers a home LAN with one or more beds
+// in "indirect" mode, and joining a bed's own AP, which gives this host an
+// address on the bed's subnet), plus extra - the subnets this host can reach
+// but has no interface on, e.g. the home LAN as seen from inside a container.
+// No address is assumed: a host with no usable interface and no extra scans
+// nothing.
 func candidateSubnets(extra []string) ([]string, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
@@ -131,30 +147,19 @@ func candidateSubnets(extra []string) ([]string, error) {
 	return subnets, nil
 }
 
-// SubnetOf returns the /24 prefix ("a.b.c") of an IPv4 address, or "" if
-// host isn't one.
-func SubnetOf(host string) string {
-	ip, err := netip.ParseAddr(host)
-	if err != nil || !ip.Is4() {
-		return ""
-	}
-	b := ip.As4()
-	return fmt.Sprintf("%d.%d.%d", b[0], b[1], b[2])
-}
-
 // subnetsFromAddrs is candidateSubnets' pure core: given a host's interface
 // addresses, which /24 prefixes are worth probing. Split out so it's
 // testable with crafted net.Addr values instead of this machine's real ones.
 func subnetsFromAddrs(addrs []net.Addr) []string {
-	seen := map[string]bool{seedSubnet: true}
-	subnets := []string{seedSubnet}
+	var subnets []string
+	seen := map[string]bool{}
 	for _, a := range addrs {
 		ipNet, ok := a.(*net.IPNet)
 		if !ok {
 			continue
 		}
 		ip4 := ipNet.IP.To4()
-		if ip4 == nil || ip4.IsLoopback() {
+		if ip4 == nil || ip4.IsLoopback() || ip4.IsLinkLocalUnicast() {
 			continue
 		}
 		prefix := fmt.Sprintf("%d.%d.%d", ip4[0], ip4[1], ip4[2])

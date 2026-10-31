@@ -15,6 +15,8 @@ Everything here is read from client code. Nothing was tested against a real bed,
    Then `GET /api/device` to confirm.
 2. **Deep scan** (fallback/web): learn own IP via WebRTC ICE candidate, then `GET http://<a.b.c.N>/api/device`
    for N=1..254 (5 s timeout; also seeds with 10.0.0.x). Accept if JSON `class` is `"ReST Bed"` or `"SmartBed"`.
+   (This dashboard's scanner derives its subnets from the host's own interfaces plus `SCAN_SUBNETS`; it does not
+   seed any fixed one. A bed is identified by its `id`, not its address, which DHCP changes.)
 - Device ID shown as `ReST-<id>` (AI Dream brand uses bare `<id>`).
 
 ## Device model

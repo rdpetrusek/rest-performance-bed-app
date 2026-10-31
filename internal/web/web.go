@@ -49,9 +49,12 @@ type Discoverer interface {
 	Snapshot() []discovery.Device
 }
 
-// Switcher retargets live state at a different bed.
+// Switcher makes the bed with the given id the one the dashboard talks to.
+// The id is the bed's own (its MAC), not an address: the Switcher finds where
+// the bed currently lives and keeps following it. Pick returns an error
+// wrapping discovery.ErrUnknownBed for an id no scan has seen.
 type Switcher interface {
-	SwitchTarget(host string)
+	Pick(ctx context.Context, id string) error
 }
 
 // validEvents are the SSE event names /api/history may be asked for.
@@ -146,7 +149,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 }
 
 type selectDeviceBody struct {
-	Address string `json:"address"`
+	ID string `json:"id"`
 }
 
 func (s *Server) handleSelectDevice(w http.ResponseWriter, r *http.Request) {
@@ -154,11 +157,19 @@ func (s *Server) handleSelectDevice(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if body.Address == "" {
-		writeError(w, http.StatusBadRequest, "address is required")
+	if body.ID == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
 		return
 	}
-	s.switcher.SwitchTarget(body.Address)
+	if err := s.switcher.Pick(r.Context(), body.ID); err != nil {
+		if errors.Is(err, discovery.ErrUnknownBed) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		s.log.Warn("pick bed failed", "id", body.ID, "err", err)
+		writeError(w, http.StatusInternalServerError, "could not save the pick")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -313,6 +324,10 @@ func (s *Server) airLimits() (lo, hi int) {
 func (s *Server) runControl(w http.ResponseWriter, r *http.Request, fn func(ctx context.Context) error) {
 	if err := fn(r.Context()); err != nil {
 		s.log.Warn("control command failed", "err", err)
+		if errors.Is(err, bed.ErrNoTarget) {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

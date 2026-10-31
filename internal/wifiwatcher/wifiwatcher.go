@@ -22,7 +22,11 @@ import (
 // SSIDPrefix identifies a bed's own direct-mode AP SSID.
 const SSIDPrefix = "ReST-"
 
-// bedGateway is every bed's own fixed address while broadcasting its AP.
+// bedGateway is the one address in this repo that is not discovered: the fixed
+// gateway the bed firmware gives itself on its own setup AP (docs/protocol.md,
+// "Setup AP"), not a guess about anyone's LAN. A host that has just joined that
+// AP has no scan to find the bed with yet, and this host's default gateway is
+// not available without OS-specific route queries.
 const bedGateway = "10.0.0.1"
 
 // indirectMode is the wire value for bed.WifiModeIndirect - kept as a local

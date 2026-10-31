@@ -91,8 +91,8 @@ func TestSweepProvisionsEachBedSSIDAndRestoresOriginal(t *testing.T) {
 	}
 
 	wantCalls := []string{
-		"host:10.0.0.1", "device", "setwifi:HomeWifi:secret", "mode:indirect",
-		"host:10.0.0.1", "device", "setwifi:HomeWifi:secret", "mode:indirect",
+		"host:" + bedGateway, "device", "setwifi:HomeWifi:secret", "mode:indirect",
+		"host:" + bedGateway, "device", "setwifi:HomeWifi:secret", "mode:indirect",
 	}
 	if diff := cmp.Diff(wantCalls, prov.calls); diff != "" {
 		t.Errorf("provisioner calls mismatch (-want +got):\n%s", diff)
@@ -137,7 +137,7 @@ func TestProvisionStopsWhenBedUnreachableAfterJoining(t *testing.T) {
 
 	w.sweep(context.Background())
 
-	wantCalls := []string{"host:10.0.0.1", "device"}
+	wantCalls := []string{"host:" + bedGateway, "device"}
 	if diff := cmp.Diff(wantCalls, prov.calls); diff != "" {
 		t.Errorf("provisioner calls mismatch (-want +got):\n%s", diff)
 	}

@@ -5,10 +5,10 @@ services:
       context: ../..
       dockerfile: cmd/server/Dockerfile
     environment:
-      - BED_HOST=${BED_HOST:-10.0.0.1}
       # Extra /24 prefixes to scan for beds, comma-separated (e.g. "192.168.1").
-      # BED_HOST's own /24 is always scanned; the container can't see the
-      # host's LAN interfaces on Docker Desktop, so discovery needs this.
+      # There is no bed address to configure: beds are found by scanning, and
+      # the one the user picks is remembered by id. The container can't see the
+      # host's LAN interfaces on Docker Desktop, so tell discovery which LAN to sweep.
       - SCAN_SUBNETS=${SCAN_SUBNETS:-}
     volumes:
       - restbed_data:/data

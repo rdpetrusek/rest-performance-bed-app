@@ -140,15 +140,16 @@ export class BedStore {
     });
   }
 
-  selectDevice(address: string): void {
-    this.api.selectDevice(address).subscribe({
+  selectDevice(id: string): void {
+    const name = this.devices().find((d) => d.id === id)?.name ?? id;
+    this.api.selectDevice(id).subscribe({
       next: () => {
-        this.controlStatus.set(`OK: switched to ${address}`);
+        this.controlStatus.set(`OK: switched to ${name}`);
         this.controlError.set(false);
         this.refreshLive();
       },
       error: (err: HttpErrorResponse) => {
-        this.controlStatus.set(`Failed: switch to ${address} - ${err.message}`);
+        this.controlStatus.set(`Failed: switch to ${name} - ${err.message}`);
         this.controlError.set(true);
       },
     });
