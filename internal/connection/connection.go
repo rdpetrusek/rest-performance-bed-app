@@ -212,37 +212,70 @@ func (m *Manager) check(ctx context.Context) {
 		return
 	}
 	started := time.Now()
-	if m.client.Host() != "" {
+	host := m.client.Host()
+	wrongHost := ""
+	if host != "" {
 		vctx, cancel := context.WithTimeout(ctx, m.verifyTimeout)
 		id, err := m.client.ID(vctx)
 		cancel()
 		if err == nil && id == picked {
 			return
 		}
+		if err == nil {
+			wrongHost = host // answered, as another bed: not merely silent
+		}
 		m.log.Warn("picked bed does not answer at its address; rescanning", "id", picked, "answered", id, "err", err)
 	}
 	// A sweep from the last interval is fresh enough here: nothing was sent.
-	if err := m.recover(ctx, started.Add(-m.verifyInterval)); err != nil && ctx.Err() == nil {
+	if err := m.recover(ctx, started.Add(-m.verifyInterval), wrongHost); err != nil && ctx.Err() == nil {
 		m.log.Warn("could not find the picked bed", "id", picked, "err", err)
 	}
 }
 
 // recover rescans (sharing any sweep begun at or after since) and retargets at
 // the picked bed's new address. The error wraps bed.ErrNoTarget if it was not found.
-func (m *Manager) recover(ctx context.Context, since time.Time) error {
+//
+// wrongHost is the address that just positively answered as a different bed
+// ("" if it was merely silent or there was none). If the picked bed is not
+// found, the target is cleared rather than left streaming the wrong bed's data
+// into the dashboard and the store; a silent address is kept, since its bed may
+// just be asleep.
+func (m *Manager) recover(ctx context.Context, since time.Time, wrongHost string) error {
 	devs, err := m.finder.Scan(ctx, since)
 	if err != nil {
 		return fmt.Errorf("rescan: %w", err)
 	}
+	picked := m.Picked()
 	if !m.Observe(devs) {
+		if wrongHost != "" {
+			m.disconnectIf(picked, wrongHost)
+		}
 		return fmt.Errorf("%w: bed %s not found on the network", bed.ErrNoTarget, m.Picked())
 	}
 	return nil
 }
 
+// disconnectIf clears the target if it is still pointed at host, which gave a
+// wrong answer, and the pick has not changed meanwhile (a retarget or a new
+// pick that raced ahead wins).
+func (m *Manager) disconnectIf(picked, host string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.picked != picked || m.client.Host() != host {
+		return
+	}
+	m.log.Warn("address belongs to another bed and the picked bed was not found; disconnecting", "id", picked)
+	m.target.SwitchTarget("")
+}
+
 // verifyError means the identity check before a command failed. Nothing was
 // sent to the device, so retrying is always safe.
-type verifyError struct{ err error }
+type verifyError struct {
+	err error
+	// wrongHost is the address that answered as a different bed, if that is
+	// why the check failed (as opposed to not answering at all).
+	wrongHost string
+}
 
 func (e *verifyError) Error() string { return "verify bed: " + e.err.Error() }
 func (e *verifyError) Unwrap() error { return e.err }
@@ -256,13 +289,17 @@ func (m *Manager) attempt(ctx context.Context, op func(context.Context, *bed.Cli
 		return fmt.Errorf("%w: no bed picked", bed.ErrNoTarget)
 	}
 	vctx, cancel := context.WithTimeout(ctx, m.verifyTimeout)
+	host := m.client.Host()
 	id, err := m.client.ID(vctx)
 	cancel()
 	if err != nil {
-		return &verifyError{err}
+		return &verifyError{err: err}
 	}
 	if id != m.picked {
-		return &verifyError{fmt.Errorf("address now answers as bed %s, not the picked %s", id, m.picked)}
+		return &verifyError{
+			err:       fmt.Errorf("address now answers as bed %s, not the picked %s", id, m.picked),
+			wrongHost: host,
+		}
 	}
 	return op(ctx, m.client)
 }
@@ -292,7 +329,12 @@ func (m *Manager) Do(ctx context.Context, idempotent bool, op func(context.Conte
 		return err
 	}
 	m.log.Warn("command failed; looking for the bed and retrying once", "err", err)
-	if rerr := m.recover(ctx, started); rerr != nil {
+	wrongHost := ""
+	var ve *verifyError
+	if errors.As(err, &ve) {
+		wrongHost = ve.wrongHost
+	}
+	if rerr := m.recover(ctx, started, wrongHost); rerr != nil {
 		return fmt.Errorf("%w (first attempt: %v)", rerr, err)
 	}
 	return m.attempt(ctx, op)

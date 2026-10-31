@@ -179,3 +179,80 @@ func TestProbeRetriesAfterTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestCancelledSweepIsNotRecordedAndAWaiterRunsItsOwn(t *testing.T) {
+	a := Device{ID: "a", Name: "A", Address: "192.0.2.10"}
+	s := New(time.Hour, time.Second, nil, slog.New(slog.DiscardHandler))
+	var calls atomic.Int32
+	release := make(chan struct{})
+	s.scan = func(ctx context.Context) ([]Device, error) {
+		switch calls.Add(1) {
+		case 1:
+			return []Device{a}, nil // seeds the list
+		case 2:
+			<-ctx.Done() // caller A's sweep, abandoned: looks like an empty network
+			return nil, nil
+		default:
+			<-release
+			return []Device{a}, nil
+		}
+	}
+	var fired atomic.Int32
+	s.OnSweep(func([]Device) { fired.Add(1) })
+	if _, err := s.Scan(context.Background(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+
+	noticed := time.Now()
+	ctxA, cancelA := context.WithCancel(context.Background())
+	errA := make(chan error, 1)
+	go func() { _, err := s.Scan(ctxA, noticed); errA <- err }()
+	for calls.Load() < 2 {
+		time.Sleep(time.Millisecond)
+	}
+	type result struct {
+		devs []Device
+		err  error
+	}
+	resB := make(chan result, 1)
+	go func() { d, err := s.Scan(context.Background(), noticed); resB <- result{d, err} }()
+	time.Sleep(20 * time.Millisecond) // B is now waiting for A's sweep to end
+	cancelA()
+	if err := <-errA; err == nil {
+		t.Error("cancelled Scan = nil error, want the context error")
+	}
+	for calls.Load() < 3 {
+		time.Sleep(time.Millisecond)
+	}
+
+	// B's own sweep is running; A's recorded nothing.
+	s.mu.RLock()
+	missed := s.known["a"].missed
+	s.mu.RUnlock()
+	if missed != 0 {
+		t.Errorf("missed = %d after a cancelled sweep, want 0", missed)
+	}
+	if got := fired.Load(); got != 1 {
+		t.Errorf("OnSweep fired %d times, want only the seeding sweep", got)
+	}
+	close(release)
+	b := <-resB
+	if b.err != nil || len(b.devs) != 1 || b.devs[0].ID != "a" {
+		t.Errorf("waiter got %v, %v; want a real result from a fresh sweep", b.devs, b.err)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("sweeps = %d, want 3", got)
+	}
+	if diff := cmp.Diff([]string{"a@192.0.2.10"}, ids(s.Snapshot())); diff != "" {
+		t.Errorf("Snapshot (-want +got):\n%s", diff)
+	}
+}
+
+func TestScanOnceStopsWhenCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := scanOnce(ctx, time.Second, []string{"192.0.2"}); err == nil {
+		t.Error("scanOnce on a cancelled ctx = nil error, want it")
+	}
+}

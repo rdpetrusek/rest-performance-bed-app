@@ -43,8 +43,13 @@ func scanOnce(ctx context.Context, timeout time.Duration, extra []string) ([]Dev
 	for _, subnet := range subnets {
 		for n := 1; n <= 254; n++ {
 			ip := fmt.Sprintf("%s.%d", subnet, n)
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				wg.Wait()
+				return nil, ctx.Err()
+			}
 			wg.Add(1)
-			sem <- struct{}{}
 			go func(ip string) {
 				defer wg.Done()
 				defer func() { <-sem }()
@@ -57,6 +62,11 @@ func scanOnce(ctx context.Context, timeout time.Duration, extra []string) ([]Dev
 		}
 	}
 	wg.Wait()
+	// Probes that failed because ctx was cancelled look like silence: this is
+	// not a sweep result, and must not be taken for an empty network.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	sort.Slice(found, func(i, j int) bool {
 		a, aErr := netip.ParseAddr(found[i].Address)

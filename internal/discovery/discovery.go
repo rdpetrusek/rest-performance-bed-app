@@ -145,6 +145,9 @@ func (s *Scanner) Scan(ctx context.Context, notBefore time.Time) ([]Device, erro
 
 	start := time.Now()
 	found, err := s.scan(ctx)
+	if err == nil {
+		err = ctx.Err() // a cancelled sweep is not a result, whatever it returned
+	}
 	if err != nil {
 		return nil, err
 	}

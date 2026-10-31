@@ -32,6 +32,7 @@ type fakeBed struct {
 	putStatus int
 	hangPut   bool   // accept a PUT and never answer it
 	gate      func() // if set, GET /api/device waits on it
+	gets      atomic.Int32
 }
 
 func newFakeBed(t *testing.T, id string) *fakeBed {
@@ -40,6 +41,7 @@ func newFakeBed(t *testing.T, id string) *fakeBed {
 	b.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/device":
+			b.gets.Add(1)
 			if b.gate != nil {
 				b.gate()
 			}
@@ -512,7 +514,7 @@ func TestRetryable(t *testing.T) {
 		idempotent bool
 		want       bool
 	}{
-		{"identity check failed", &verifyError{errors.New("x")}, false, true},
+		{"identity check failed", &verifyError{err: errors.New("x")}, false, true},
 		{"correct bed refused with an HTTP status", &bed.StatusError{Method: "PUT", Path: "/x", Status: "500"}, true, false},
 		{"no target", fmt.Errorf("%w: none", bed.ErrNoTarget), true, false},
 		{"connection never opened, not idempotent", fmt.Errorf("put: %w", dial), false, true},
@@ -536,5 +538,70 @@ func TestLoadSavedError(t *testing.T) {
 	r.settings.err = errors.New("db locked")
 	if err := r.m.LoadSaved(context.Background()); err == nil {
 		t.Error("LoadSaved = nil, want the settings error")
+	}
+}
+
+func TestWrongBedAtTheAddressAndPickedBedAbsentDisconnects(t *testing.T) {
+	other, home := newFakeBed(t, bedB), newFakeBed(t, bedA)
+	r := newRig(t, bedA)
+	r.client.SetHost(other.addr())
+	r.setLAN(other.dev()) // the picked bed is nowhere
+
+	r.m.check(context.Background())
+	if got := r.client.Host(); got != "" {
+		t.Fatalf("host = %q, want the wrong bed disconnected", got)
+	}
+	reads := other.gets.Load()
+	r.m.check(context.Background()) // nothing to verify; the wrong bed is not read again
+	if got := other.gets.Load(); got != reads {
+		t.Errorf("wrong bed read %d more times after disconnecting", got-reads)
+	}
+
+	r.setLAN(other.dev(), home.dev()) // the picked bed comes back
+	r.sweep(t)
+	if got := r.client.Host(); got != home.addr() {
+		t.Errorf("host = %q, want reconnected to %q", got, home.addr())
+	}
+}
+
+func TestCommandThatFindsTheWrongBedDisconnectsToo(t *testing.T) {
+	other := newFakeBed(t, bedB)
+	r := newRig(t, bedA)
+	r.client.SetHost(other.addr())
+	r.setLAN(other.dev())
+
+	if err := r.m.SetFirmness(context.Background(), 28); !errors.Is(err, bed.ErrNoTarget) {
+		t.Errorf("err = %v, want ErrNoTarget", err)
+	}
+	if got := r.client.Host(); got != "" {
+		t.Errorf("host = %q, want disconnected", got)
+	}
+	if got := other.puts.Load(); got != 0 {
+		t.Errorf("the wrong bed received %d commands", got)
+	}
+}
+
+func TestSilentBedNotFoundKeepsItsAddress(t *testing.T) {
+	r := newRig(t, bedA)
+	dead := deadAddr()
+	r.client.SetHost(dead)
+	r.setLAN() // asleep: not found either
+
+	r.m.check(context.Background())
+	if got := r.client.Host(); got != dead {
+		t.Errorf("host = %q, want the silent bed's address %q kept", got, dead)
+	}
+}
+
+func TestDisconnectIfLosesToARaceingRetarget(t *testing.T) {
+	r := newRig(t, bedA)
+	r.client.SetHost("moved:1")
+	r.m.disconnectIf(bedA, "stale:1") // host changed since the wrong answer
+	if got := r.client.Host(); got != "moved:1" {
+		t.Errorf("host = %q, want the newer target kept", got)
+	}
+	r.m.disconnectIf(bedB, "moved:1") // pick changed since
+	if got := r.client.Host(); got != "moved:1" {
+		t.Errorf("host = %q, want it kept after the pick changed", got)
 	}
 }
