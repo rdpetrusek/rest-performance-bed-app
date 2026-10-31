@@ -1,0 +1,24 @@
+<section class="panel">
+  <h2>Settings</h2>
+
+  <div class="row">
+    <app-device-selector />
+  </div>
+  @if (deviceMeta()) {
+    <div class="row muted">{{ deviceMeta() }}</div>
+  }
+
+  @if (store.padConfig(); as cfg) {
+    <div class="row">
+      <span>Sensor pad: <strong>{{ cfg.bypassed ? 'Bypassed' : 'Required' }}</strong></span>
+      <button type="button" (click)="store.togglePadBypass()">
+        {{ cfg.bypassed ? 'Use sensor' : 'Bypass sensor' }}
+      </button>
+    </div>
+    @if (cfg.bypassed) {
+      <div class="muted">No presence, heart rate or breathing while bypassed.</div>
+    }
+  }
+
+  <div class="muted" role="status" [style.color]="statusColor()">{{ store.controlStatus() }}</div>
+</section>

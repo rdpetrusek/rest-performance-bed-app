@@ -1,0 +1,9 @@
+# The frontend service. Included from the root compose.yaml.
+services:
+  ui:
+    build: .
+    ports:
+      - "8097:80"
+    depends_on:
+      - api
+    restart: unless-stopped

@@ -1,0 +1,13 @@
+*.sh text eol=lf
+Dockerfile* text eol=lf
+compose.yaml text eol=lf
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+Makefile text eol=lf
+*.ts text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.template text eol=lf
+.dockerignore text eol=lf

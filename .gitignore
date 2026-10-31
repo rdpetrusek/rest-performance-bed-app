@@ -1,0 +1,19 @@
+extracted/
+
+out/
+tools/mrvl-88mw30x-firmware-tools/
+tools/out/
+
+# Go build output
+/bin/
+
+# Local deploy settings (bed addresses) for docker compose
+.env
+
+# Vendor binaries (APK, firmware images, extracted filesystem) - kept locally
+# for reverse-engineering, not redistributed. See docs/hardware.md for sources.
+/apk/
+/firmware/
+
+# The live SQLite event log (personal sleep data)
+/data/

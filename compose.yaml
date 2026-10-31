@@ -1,0 +1,20 @@
+# ReST Bed self-hosted dashboard. Each service lives in its own folder with
+# its own Dockerfile and compose fragment; this file only names the project
+# and includes them. Remove a service by deleting its folder and its line
+# below.
+#
+# The host running these containers needs network access to the bed's local
+# API. Simplest setup: join the host to the bed's own Wi-Fi AP (SSID
+# "ReST-<id>", open/no password) and leave the bed in that default "direct"
+# mode permanently - see docs/protocol.md for why "indirect" (joining your
+# home Wi-Fi) is unreliable on this hardware.
+#
+# Usage:
+#   BED_HOST=10.0.0.1 docker compose up -d --build
+# Pinned so the project (and its restbed_data volume) keeps its name even if
+# the checkout folder is renamed.
+name: rest-bed-app
+
+include:
+  - cmd/server/compose.yaml # api: Go JSON API, distroless
+  - ui/compose.yaml         # ui: Angular app on nginx, proxies /api to api

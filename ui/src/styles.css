@@ -1,0 +1,291 @@
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --text: #e7e9ee;
+  --muted: #8a8f9a;
+  --accent: #5ec2a8;
+  --danger: #d9534f;
+  --border: #272b35;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --text: #1c1f26;
+    --muted: #666c78;
+    --border: #e1e4ea;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+header {
+  position: relative;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 8px 16px 0;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+button.menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+}
+.menu {
+  position: absolute;
+  top: 52px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+.menu a {
+  padding: 12px 16px;
+  color: var(--text);
+  text-decoration: none;
+}
+.menu a:hover,
+.menu a:focus-visible {
+  background: var(--border);
+}
+.menu a.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 2px solid var(--danger);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.card.warning {
+  border: 2px solid var(--danger);
+}
+.card h3 {
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.big {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+button {
+  background: var(--accent);
+  color: #0a0a0a;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.segmented {
+  display: inline-flex;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.segmented button {
+  border-radius: 0;
+}
+.segmented button[aria-pressed='false'] {
+  background: transparent;
+  color: var(--text);
+  font-weight: 400;
+}
+button.danger {
+  background: var(--danger);
+  color: white;
+}
+select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+canvas {
+  max-width: 100%;
+}
+.chart {
+  position: relative;
+  height: 260px;
+}
+.slider-row {
+  display: grid;
+  grid-template-columns: 5.5em 1fr 2.5em;
+  align-items: center;
+  gap: 10px;
+  max-width: 520px;
+  margin-bottom: 6px;
+}
+.slider-row span {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* A bigger thumb than the browser default, so it's easy to grab on a touchscreen. */
+input[type='range'] {
+  appearance: none;
+  width: 100%;
+  height: 36px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--muted);
+}
+input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--muted);
+}
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+input[type='range']::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+input[type='range']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Phones: compact cards and 44px-tall touch targets. */
+@media (max-width: 600px) {
+  main {
+    padding: 8px 16px 16px;
+  }
+  .cards {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .card {
+    padding: 10px;
+  }
+  .card.wide {
+    grid-column: 1 / -1;
+  }
+  .card.pair {
+    grid-column: span 2;
+  }
+  .card h3 {
+    font-size: 0.7rem;
+  }
+  .big {
+    font-size: 1.15rem;
+  }
+  .panel {
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+  button {
+    min-height: 44px;
+  }
+  /* iOS zooms into any control with text under 16px when it's focused. */
+  select {
+    font-size: 16px;
+    min-height: 44px;
+    max-width: 100%;
+  }
+  .segmented {
+    display: flex;
+  }
+  .segmented button {
+    flex: 1;
+  }
+  .slider-row {
+    grid-template-columns: 4.5em 1fr 2em;
+    max-width: none;
+  }
+  button.stop {
+    width: 100%;
+  }
+  .chart {
+    height: 220px;
+  }
+}
