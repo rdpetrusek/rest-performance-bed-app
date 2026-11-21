@@ -30,4 +30,3 @@ Run the API alongside it (`make run` from the repo root).
 bundles for good. `compose.yaml` is this service's fragment, included from
 the root `compose.yaml`.
 
-Coding rules for this workspace are in `.claude/CLAUDE.md`.
